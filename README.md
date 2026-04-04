@@ -45,6 +45,8 @@ A StoreFS cluster consists of multiple nodes that communicate through the gossip
 - **Fault Tolerance**: Data automatically recovers when nodes fail
 - **Load Balancing**: Requests are automatically distributed to available nodes
 
+![](docs/pics/arch.jpg)
+
 ## Installation and Deployment
 
 ### 1. Configuration File Details
@@ -169,12 +171,12 @@ Visit `http://localhost:7946/console` with the default administrator account:
 
 | Function Module | Description | Screenshot Location |
 |----------------|-------------|---------------------|
-| User Management | Create/edit/delete users, manage access keys | [Screenshot location reserved] |
-| Policy Management | Create/edit/delete policies, configure permission rules | [Screenshot location reserved] |
-| Bucket Management | Create/edit/delete buckets, configure access policies | [Screenshot location reserved] |
-| Object Management | Upload/download/delete objects, preview file contents | [Screenshot location reserved] |
-| Node Management | View node status, add/remove nodes | [Screenshot location reserved] |
-| Internationalization | Switch languages | [Screenshot location reserved] |
+| User Management | Create/edit/delete users, manage access keys | [Login](docs/pics/login.jpg), [UserList](docs/pics/user.jpg) |
+| Policy Management | Create/edit/delete policies, configure permission rules | [PolicyList](docs/pics/policy.jpg) |
+| Bucket Management | Create/edit/delete buckets, configure access policies | [BucketList](docs/pics/bucket.jpg) |
+| Object Management | Upload/download/delete objects, preview file contents | [ObjectList](docs/pics/object.jpg), [ObjectInfo](docs/pics/objectinfo.jpg) |
+| Node Management | View node status, add/remove nodes | [NodeList](docs/pics/node.jpg) |
+| Internationalization | Switch languages | [Internationalization](docs/pics/internationalization.jpg) |
 
 ## S3 API
 
@@ -184,7 +186,7 @@ StoreFS implements the core functions of the S3 API, compatible with AWS S3 clie
 
 ### Implemented API Interfaces
 
-For detailed API interface documentation, please refer to: [S3 API Documentation](s3.md)
+For detailed API interface documentation, please refer to: [S3 API Documentation](docs/s3.md)
 
 Main implemented API interfaces include:
 
@@ -199,7 +201,7 @@ StoreFS provides a set of RESTful Admin APIs for managing the system's users, po
 
 ### Implemented API Interfaces
 
-For detailed API interface documentation, please refer to: [Admin API Documentation](admin-api.md)
+For detailed API interface documentation, please refer to: [Admin API Documentation](docs/admin-api.md)
 
 Main implemented API interfaces include:
 
@@ -246,8 +248,8 @@ aws s3 cp s3://mybucket/localfile.txt . --endpoint-url http://127.0.0.1:8901 --p
 
 If you encounter problems while using StoreFS, please refer to:
 
-1. [FAQ Documentation](faq.md) - Frequently Asked Questions
-2. [Troubleshooting](troubleshooting.md) - Common Problem Troubleshooting
+1. [FAQ Documentation](docs/faq.md) - Frequently Asked Questions
+2. [Troubleshooting](docs/troubleshooting.md) - Common Problem Troubleshooting
 3. [GitHub Issues](https://github.com/bidzhao/sorefs/issues) - Submit Issue Reports
 
 ## License
