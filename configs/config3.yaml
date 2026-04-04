@@ -1,0 +1,27 @@
+cluster:
+  name: mycluster
+  db:
+    host: "db"
+    port: 9030
+    user: "root"
+    password: ""
+    database: "mydb"
+    timeout: 10s
+  node:
+    name: node3
+    num: 3
+    ip: "node3"
+    port: 7946
+    internal_port: 17946
+    disks:
+      - path: /disk1
+        weight: 1
+      - path: /disk2
+        weight: 1
+    s3:
+      host: "node3"
+      port: 8901
+  seeds:
+    - node1:7946
+    - node2:7946
+    - node3:7946

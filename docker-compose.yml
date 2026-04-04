@@ -1,0 +1,183 @@
+services:
+  node1:
+    image: bidzhao/storefs:0.1.0
+    container_name: storefs-node1
+    restart: unless-stopped
+    networks:
+      - storefs-net
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    ports:
+      - "7946:7946"
+      - "8901:8901"
+    volumes:
+      - /:/hostfs:ro
+      - ./configs/config1.yaml:/app/config.yaml
+      - ./data/node1/disk1:/disk1
+      - ./data/node1/disk2:/disk2
+    environment:
+      - TZ=Asia/Shanghai
+    depends_on:
+      init-db:
+        condition: service_completed_successfully
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:7946/health"]
+      interval: 10s
+      timeout: 3s
+      retries: 5
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "50m"
+        max-file: "3"
+
+  node2:
+    image: bidzhao/storefs:0.1.0
+    container_name: storefs-node2
+    restart: unless-stopped
+    networks:
+      - storefs-net
+    ports:
+      - "7947:7946"
+      - "8902:8901"
+    volumes:
+      - /:/hostfs:ro
+      - ./configs/config2.yaml:/app/config.yaml
+      - ./data/node2/disk1:/disk1
+      - ./data/node2/disk2:/disk2
+    environment:
+      - TZ=Asia/Shanghai
+    depends_on:
+      init-db:
+        condition: service_completed_successfully
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:7946/health"]
+      interval: 10s
+      timeout: 3s
+      retries: 5
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "50m"
+        max-file: "3"
+
+  node3:
+    image: bidzhao/storefs:0.1.0
+    container_name: storefs-node3
+    restart: unless-stopped
+    networks:
+      - storefs-net
+    ports:
+      - "7948:7946"
+      - "8903:8901"
+    volumes:
+      - /:/hostfs:ro
+      - ./configs/config3.yaml:/app/config.yaml
+      - ./data/node3/disk1:/disk1
+      - ./data/node3/disk2:/disk2
+    environment:
+      - TZ=Asia/Shanghai
+    depends_on:
+      init-db:
+        condition: service_completed_successfully
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:7946/health"]
+      interval: 10s
+      timeout: 3s
+      retries: 5
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "50m"
+        max-file: "3"
+
+  db:
+    image: starrocks/allin1-ubuntu:4.0.7
+    container_name: storefs-starrocks-allin1
+    restart: unless-stopped
+    ports:
+      - "8030:8030"   # HTTP API
+      - "9030:9030"   # MySQL query port (main one)
+      - "8040:8040"   # BE HTTP (optional for debug)
+    networks:
+      - storefs-net
+    volumes:          # Optional: persist meta & data across restarts
+      - starrocks-meta:/opt/starrocks/fe/meta
+      - starrocks-storage:/opt/starrocks/be/storage
+      - starrocks-log:/opt/starrocks/fe/log
+    environment:
+      - TZ=Asia/Shanghai 
+    healthcheck:
+      test: ["CMD", "mysql", "-h", "127.0.0.1", "-P", "9030", "-uroot", "-e", "SHOW FRONTENDS;"]
+      interval: 15s
+      timeout: 5s
+      retries: 10
+      start_period: 60s
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "100m"
+        max-file: "3"
+
+  init-db:
+    image: starrocks/allin1-ubuntu:4.0.7
+    container_name: storefs-init-db
+    restart: "no"
+    depends_on:
+      db:
+        condition: service_healthy
+    networks:
+      - storefs-net
+    volumes:
+      - ./configs/init.sql:/init.sql
+      - ./configs/db-init:/init-done
+    environment:
+      - TZ=Asia/Shanghai
+    entrypoint:
+    - bash
+    - -c
+    - |
+      echo "Waiting for FE..."
+      for i in {1..60}; do
+        mysql -h db -P9030 -uroot -e "SHOW FRONTENDS;" && break
+        sleep 2
+      done
+
+      echo "Waiting for BE..."
+      for i in {1..60}; do
+        mysql -h db -P9030 -uroot -e "SHOW BACKENDS;" | grep "OK" | grep "true" && break
+        sleep 2
+      done
+
+      for i in {1..60}; do
+        tableNum=$$(mysql -h db -P9030 -uroot -N -B -e "SHOW BACKENDS;" | awk '{print $14}' | tail -1)
+        tableNum=$${tableNum:-0}
+
+        if [ "$${tableNum}" -ge 100 ]; then
+          echo "TabletNum=$${tableNum}, break"
+          break
+        fi
+        sleep 2
+      done
+
+      if [ -f /init-done/.done ]; then
+        echo "DB already initialized, skipping..."
+        exit 0
+      fi
+
+      echo "Running init.sql..."
+      mysql -h db -P9030 -uroot < /init.sql
+
+      echo "Marking init done..."
+      touch /init-done/.done
+
+      echo "Init completed."
+
+networks:
+  storefs-net:
+    driver: bridge
+
+volumes:
+  starrocks-meta:
+  starrocks-storage:
+  starrocks-log:
