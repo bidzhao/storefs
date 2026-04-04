@@ -1,5 +1,9 @@
 **[查看中文版](README_cn.md)**
 
+<p align="center">
+  <img src="docs/pics/logo.jpg" height="100" alt="StoreFS Logo">
+</p>
+
 # StoreFS - Distributed S3-Compatible Storage System
 
 ## Index

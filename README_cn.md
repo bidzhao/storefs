@@ -1,5 +1,8 @@
 **[English](README.md)**
 
+<p align="center">
+  <img src="docs/pics/logo.jpg" height="100" alt="StoreFS Logo">
+</p>
 # StoreFS - 分布式S3兼容存储系统
 
 ## 索引
