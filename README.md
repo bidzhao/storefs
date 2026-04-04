@@ -19,7 +19,7 @@ This project uses Claude Code to automatically generate all codes and documentat
 
 ### Core Features
 
-- **S3-Compatible API**: Fully compatible with AWS S3 API, supporting AWS CLI and other S3 tools
+- **S3-Compatible API**: Compatible with AWS S3 API, supporting AWS CLI and other S3 tools
 - **Distributed Architecture**: Node discovery and communication through gossip protocol
 - **Dynamic Scalability**: Supports adding/removing nodes freely without downtime
 - **High-Performance Storage**: Optimized storage engine supporting multiple storage media
