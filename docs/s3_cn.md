@@ -253,6 +253,212 @@ Content-Length: 0
 
 **说明**：无论对象是否存在，都返回成功响应。
 
+#### 2.6 多部分上传操作（Multipart Upload）
+
+##### 2.6.1 初始化分块上传（CreateMultipartUpload）
+
+**URL**：`POST /<bucket>/<object>?uploads`
+
+**请求**：
+```http
+POST /mybucket/largefile.zip?uploads HTTP/1.1
+Host: 127.0.0.1:8901
+Content-Type: application/zip
+Authorization: AWS4-HMAC-SHA256 Credential=<AK>/20230101/us-east-1/s3/aws4_request, SignedHeaders=..., Signature=...
+```
+
+**响应**：
+```xml
+<?xml version="1.0" encoding="UTF-8"?>
+<InitiateMultipartUploadResult xmlns="http://s3.amazonaws.com/doc/2006-03-01/">
+  <Bucket>mybucket</Bucket>
+  <Key>largefile.zip</Key>
+  <UploadId>abc123def456</UploadId>
+</InitiateMultipartUploadResult>
+```
+
+**错误响应**：
+- 404 Not Found：桶不存在
+- 403 Forbidden：无权限
+
+##### 2.6.2 上传分块（UploadPart）
+
+**URL**：`PUT /<bucket>/<object>?partNumber=<part_number>&uploadId=<upload_id>`
+
+**请求**：
+```http
+PUT /mybucket/largefile.zip?partNumber=1&uploadId=abc123def456 HTTP/1.1
+Host: 127.0.0.1:8901
+Content-Length: 5242880
+Authorization: AWS4-HMAC-SHA256 Credential=<AK>/20230101/us-east-1/s3/aws4_request, SignedHeaders=..., Signature=...
+
+[part data]
+```
+
+**响应**：
+```http
+HTTP/1.1 200 OK
+ETag: "abc123"
+Content-Length: 0
+```
+
+**错误响应**：
+- 404 Not Found：桶不存在
+- 403 Forbidden：无权限
+- 400 Bad Request：无效的分块编号或上传ID
+
+##### 2.6.3 列出已上传的分块（ListParts）
+
+**URL**：`GET /<bucket>/<object>?uploadId=<upload_id>`
+
+**请求**：
+```http
+GET /mybucket/largefile.zip?uploadId=abc123def456 HTTP/1.1
+Host: 127.0.0.1:8901
+Authorization: AWS4-HMAC-SHA256 Credential=<AK>/20230101/us-east-1/s3/aws4_request, SignedHeaders=..., Signature=...
+```
+
+**响应**：
+```xml
+<?xml version="1.0" encoding="UTF-8"?>
+<ListPartsResult xmlns="http://s3.amazonaws.com/doc/2006-03-01/">
+  <Bucket>mybucket</Bucket>
+  <Key>largefile.zip</Key>
+  <UploadId>abc123def456</UploadId>
+  <Initiator>
+    <ID>1</ID>
+    <DisplayName>default</DisplayName>
+  </Initiator>
+  <Owner>
+    <ID>1</ID>
+    <DisplayName>default</DisplayName>
+  </Owner>
+  <StorageClass>STANDARD</StorageClass>
+  <PartNumberMarker>0</PartNumberMarker>
+  <NextPartNumberMarker>2</NextPartNumberMarker>
+  <MaxParts>1000</MaxParts>
+  <IsTruncated>false</IsTruncated>
+  <Part>
+    <PartNumber>1</PartNumber>
+    <LastModified>2023-01-01T12:00:00Z</LastModified>
+    <ETag>"abc123"</ETag>
+    <Size>5242880</Size>
+  </Part>
+  <Part>
+    <PartNumber>2</PartNumber>
+    <LastModified>2023-01-01T12:05:00Z</LastModified>
+    <ETag>"def456"</ETag>
+    <Size>5242880</Size>
+  </Part>
+</ListPartsResult>
+```
+
+**错误响应**：
+- 404 Not Found：桶不存在
+- 403 Forbidden：无权限
+- 400 Bad Request：无效的上传ID
+
+##### 2.6.4 完成分块上传（CompleteMultipartUpload）
+
+**URL**：`POST /<bucket>/<object>?uploadId=<upload_id>`
+
+**请求**：
+```http
+POST /mybucket/largefile.zip?uploadId=abc123def456 HTTP/1.1
+Host: 127.0.0.1:8901
+Content-Type: multipart/form-data
+Authorization: AWS4-HMAC-SHA256 Credential=<AK>/20230101/us-east-1/s3/aws4_request, SignedHeaders=..., Signature=...
+
+<CompleteMultipartUpload>
+  <Part>
+    <PartNumber>1</PartNumber>
+    <ETag>"abc123"</ETag>
+  </Part>
+  <Part>
+    <PartNumber>2</PartNumber>
+    <ETag>"def456"</ETag>
+  </Part>
+</CompleteMultipartUpload>
+```
+
+**响应**：
+```xml
+<?xml version="1.0" encoding="UTF-8"?>
+<CompleteMultipartUploadResult xmlns="http://s3.amazonaws.com/doc/2006-03-01/">
+  <Location>http://127.0.0.1:8901/mybucket/largefile.zip</Location>
+  <Bucket>mybucket</Bucket>
+  <Key>largefile.zip</Key>
+  <ETag>"abc123def456"</ETag>
+</CompleteMultipartUploadResult>
+```
+
+**错误响应**：
+- 404 Not Found：桶不存在
+- 403 Forbidden：无权限
+- 400 Bad Request：无效的上传ID或分块信息
+
+##### 2.6.5 中止分块上传（AbortMultipartUpload）
+
+**URL**：`DELETE /<bucket>/<object>?uploadId=<upload_id>`
+
+**请求**：
+```http
+DELETE /mybucket/largefile.zip?uploadId=abc123def456 HTTP/1.1
+Host: 127.0.0.1:8901
+Authorization: AWS4-HMAC-SHA256 Credential=<AK>/20230101/us-east-1/s3/aws4_request, SignedHeaders=..., Signature=...
+```
+
+**响应**：
+```http
+HTTP/1.1 204 No Content
+Content-Length: 0
+```
+
+**说明**：无论上传是否存在，都返回成功响应。
+
+##### 2.6.6 列出分块上传（ListMultipartUploads）
+
+**URL**：`GET /<bucket>?uploads`
+
+**请求**：
+```http
+GET /mybucket?uploads HTTP/1.1
+Host: 127.0.0.1:8901
+Authorization: AWS4-HMAC-SHA256 Credential=<AK>/20230101/us-east-1/s3/aws4_request, SignedHeaders=..., Signature=...
+```
+
+**响应**：
+```xml
+<?xml version="1.0" encoding="UTF-8"?>
+<ListMultipartUploadsResult xmlns="http://s3.amazonaws.com/doc/2006-03-01/">
+  <Bucket>mybucket</Bucket>
+  <KeyMarker></KeyMarker>
+  <UploadIdMarker></UploadIdMarker>
+  <NextKeyMarker>largefile.zip</NextKeyMarker>
+  <NextUploadIdMarker>abc123def456</NextUploadIdMarker>
+  <MaxUploads>1000</MaxUploads>
+  <IsTruncated>false</IsTruncated>
+  <Upload>
+    <Key>largefile.zip</Key>
+    <UploadId>abc123def456</UploadId>
+    <Initiated>2023-01-01T12:00:00Z</Initiated>
+    <StorageClass>STANDARD</StorageClass>
+    <Initiator>
+      <ID>1</ID>
+      <DisplayName>default</DisplayName>
+    </Initiator>
+    <Owner>
+      <ID>1</ID>
+      <DisplayName>default</DisplayName>
+    </Owner>
+  </Upload>
+</ListMultipartUploadsResult>
+```
+
+**错误响应**：
+- 404 Not Found：桶不存在
+- 403 Forbidden：无权限
+
 ## 桶名规范
 
 StoreFS 遵循 AWS S3 桶名规范：
@@ -308,7 +514,6 @@ aws s3 --endpoint-url http://127.0.0.1:8901 --profile storefs cp localfile.txt s
 
 - 桶策略和 ACL
 - 对象版本控制
-- 多部分上传
 - 服务器端加密
 - 生命周期管理
 - 跨域资源共享（CORS）

@@ -179,6 +179,7 @@ Visit `http://localhost:7946/console` with the default administrator account:
 | Policy Management | Create/edit/delete policies, configure permission rules | [PolicyList](docs/pics/policy.jpg) |
 | Bucket Management | Create/edit/delete buckets, configure access policies | [BucketList](docs/pics/bucket.jpg) |
 | Object Management | Upload/download/delete objects, preview file contents | [ObjectList](docs/pics/object.jpg), [ObjectInfo](docs/pics/objectinfo.jpg) |
+| Multipart Management | Complete/abort | [MultipartList](docs/pics/multipart.jpg), [MultipartInfo](docs/pics/partdetail.jpg), [MultipartFragmentInfo](docs/pics/partfragment.jpg) |
 | Node Management | View node status, add/remove nodes | [NodeList](docs/pics/node.jpg) |
 | Internationalization | Switch languages | [Internationalization](docs/pics/internationalization.jpg) |
 
@@ -196,6 +197,7 @@ Main implemented API interfaces include:
 
 - **Bucket Operations**: Create bucket, list buckets, delete bucket
 - **Object Operations**: Upload object, download object, delete object, list objects
+- **Multipart Operations**: Create multipart upload, upload part, complete multipart upload, abort multipart upload, list parts, list multipart uploads
 
 ## Admin API
 
