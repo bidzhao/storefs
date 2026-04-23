@@ -12,6 +12,7 @@
 - [Management Console](#management-console)
 - [S3 API](#s3-api)
 - [Admin API](#admin-api)
+- [s3file CLI](#s3file-cli)
 - [Quick Start](#quick-start)
 - [Technical Support](#technical-support)
 - [License](#license)
@@ -218,9 +219,47 @@ Main implemented API interfaces include:
 - **Object Management**: Manage objects in buckets, get object metadata
 - **Node Management**: View node status, add/delete nodes
 
+## s3file CLI
+
+### Overview
+
+s3file is a command-line tool for interacting with S3-compatible storage services, supporting both interactive and silent modes. It works with StoreFS, MinIO, AWS S3, and all S3-compatible services.
+
+### Features
+
+- **Interactive Shell Mode**: Navigate S3 storage like a local file system
+- **Silent Mode**: Execute commands programmatically
+- **Multi-Provider Support**: Works with StoreFS, MinIO, AWS S3, and all S3-compatible services
+- **Pagination Support**: Browse large directories with ease
+- **Command History**: Navigate through previous commands
+- **Auto-completion**: Tab completion for commands
+- **Wildcard Support**: Use * and ? for fuzzy matching
+
+### Documentation
+
+For detailed documentation, please refer to: [s3file CLI Documentation](docs/s3file.md)
+
 ## Quick Start
 
-### 1. Connect Using AWS CLI
+### 1. Connect Using s3file CLI
+
+```bash
+# Start interactive mode (connects to localhost:8901 by default)
+s3file
+
+# List all buckets
+s3file --silent --command 'buckets'
+
+# Create bucket and upload file using silent mode
+s3file --silent --command 'mb mybucket' --command 'cd s3://mybucket' --command 'upload localfile.txt remote.txt'
+
+# Download file using silent mode
+s3file --silent --command 'cd s3://mybucket' --command 'download remote.txt localfile.txt'
+```
+
+For more detailed usage, please refer to: [s3file CLI Documentation](docs/s3file.md)
+
+### 2. Connect Using AWS CLI
 
 ```bash
 # Configure AWS CLI
@@ -243,7 +282,7 @@ aws s3 cp localfile.txt s3://mybucket/ --endpoint-url http://127.0.0.1:8901 --pr
 aws s3 cp s3://mybucket/localfile.txt . --endpoint-url http://127.0.0.1:8901 --profile storefs
 ```
 
-### 2. Use Management Console
+### 3. Use Management Console
 
 1. Visit `http://localhost:7946/console`
 2. Log in with the default administrator account (username: admin, password: admin123)

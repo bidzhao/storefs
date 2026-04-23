@@ -1,6 +1,6 @@
 services:
   node1:
-    image: bidzhao/storefs:0.2.0
+    image: bidzhao/storefs:0.2.1
     container_name: storefs-node1
     restart: unless-stopped
     networks:
@@ -32,7 +32,7 @@ services:
         max-file: "3"
 
   node2:
-    image: bidzhao/storefs:0.2.0
+    image: bidzhao/storefs:0.2.1
     container_name: storefs-node2
     restart: unless-stopped
     networks:
@@ -62,7 +62,7 @@ services:
         max-file: "3"
 
   node3:
-    image: bidzhao/storefs:0.2.0
+    image: bidzhao/storefs:0.2.1
     container_name: storefs-node3
     restart: unless-stopped
     networks:
