@@ -197,7 +197,7 @@ During `ls` in paginated mode:
 ```bash
 $ s3file
 ╔══════════════════════════════════════════════════════════════════════════╗
-║                        S3 File System CLI v1.0                           ║
+║                        S3 File System CLI v0.2.1                         ║
 ║      Supports StoreFS, MinIO, AWS S3, and all S3-compatible services     ║
 ╚══════════════════════════════════════════════════════════════════════════╝
 Type 'help' for available commands
