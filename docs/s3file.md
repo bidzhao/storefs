@@ -93,6 +93,7 @@ s3file --silent --connect play.min.io --access-key Q3AM3UQ867SPQQA43P2F --secret
 | `cat <file>` | Display file contents |
 | `upload, up <local> <remote>` | Upload a file |
 | `download, dl <remote> <local>` | Download a file |
+| `lv <object>` | List all versions of an object (reverse chronological order) |
 
 #### cp Command Options
 
@@ -102,12 +103,14 @@ s3file --silent --connect play.min.io --access-key Q3AM3UQ867SPQQA43P2F --secret
 | `-d, --download` | Force download mode |
 | `-f, --force` | Force overwrite without confirmation |
 | `-n, --no-clobber` | Do not overwrite existing files |
+| `--versionId <id>` | Download a specific version of the object (download mode only) |
 
 #### upload/download Options
 
 | Option | Description |
 |--------|-------------|
 | `-f, --force` | Force overwrite without confirmation |
+| `--versionId <id>` | Download a specific version of the object (download only) |
 
 ### Delete Operations
 
@@ -139,7 +142,7 @@ rm -r --dry-run mydir/         # Preview deletion
 |---------|-------------|
 | `buckets` | List all buckets |
 | `use <bucket>` | Switch to specified bucket |
-| `mb <bucket>` | Create a new bucket |
+| `mb <bucket> [--versioning]` | Create a new bucket (optionally with versioning enabled) |
 
 ### Connection Management
 
@@ -164,6 +167,22 @@ connect --interactive
 | Command | Description |
 |---------|-------------|
 | `pagesize [num]` | Set or view items per page (5-100) |
+
+### Version Management
+
+| Command | Description |
+|---------|-------------|
+| `lv <object>` | List all versions of an object in reverse chronological order |
+| `download --versionId <id> <remote> <local>` | Download a specific version of an object |
+| `cp --versionId <id> <source> <destination>` | Copy a specific version of an object (download mode only) |
+| `mb <bucket> --versioning` | Create a bucket with versioning enabled |
+
+The `lv` command displays:
+- All versions of the specified object
+- Which version is the latest (marked with ✓ yes)
+- Last modified time for each version
+- Size of each version
+- Delete markers (if any)
 
 ### Other Commands
 
@@ -197,7 +216,7 @@ During `ls` in paginated mode:
 ```bash
 $ s3file
 ╔══════════════════════════════════════════════════════════════════════════╗
-║                        S3 File System CLI v0.2.1                         ║
+║                        S3 File System CLI v0.3.0                         ║
 ║      Supports StoreFS, MinIO, AWS S3, and all S3-compatible services     ║
 ╚══════════════════════════════════════════════════════════════════════════╝
 Type 'help' for available commands

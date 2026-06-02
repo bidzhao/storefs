@@ -99,6 +99,114 @@ Authorization: AWS4-HMAC-SHA256 Credential=<AK>/20230101/us-east-1/s3/aws4_reque
 **错误响应**：
 - 401 Unauthorized：认证失败
 
+#### 1.4 获取桶版本控制状态（GetBucketVersioning）
+
+**URL**：`GET /<bucket>?versioning`
+
+**请求**：
+```http
+GET /mybucket?versioning HTTP/1.1
+Host: 127.0.0.1:8901
+Authorization: AWS4-HMAC-SHA256 Credential=<AK>/20230101/us-east-1/s3/aws4_request, SignedHeaders=..., Signature=...
+```
+
+**响应**：
+```xml
+<?xml version="1.0" encoding="UTF-8"?>
+<VersioningConfiguration xmlns="http://s3.amazonaws.com/doc/2006-03-01/">
+  <Status>Enabled</Status>
+</VersioningConfiguration>
+```
+
+**说明**：
+- Status 可能的值：`Enabled`（启用）、`Suspended`（暂停）或空（未启用）
+- 只有桶所有者或管理员可以访问此API
+
+**错误响应**：
+- 404 Not Found：桶不存在
+- 403 Forbidden：无权限
+- 401 Unauthorized：认证失败
+
+#### 1.5 设置桶版本控制状态（PutBucketVersioning）
+
+**URL**：`PUT /<bucket>?versioning`
+
+**请求**：
+```http
+PUT /mybucket?versioning HTTP/1.1
+Host: 127.0.0.1:8901
+Content-Type: application/xml
+Content-MD5: <md5_base64>
+Authorization: AWS4-HMAC-SHA256 Credential=<AK>/20230101/us-east-1/s3/aws4_request, SignedHeaders=..., Signature=...
+
+<VersioningConfiguration xmlns="http://s3.amazonaws.com/doc/2006-03-01/">
+  <Status>Enabled</Status>
+</VersioningConfiguration>
+```
+
+**说明**：
+- Status 可以是 `Enabled`（启用）或 `Suspended`（暂停）
+- 版本控制一旦启用就不能完全禁用，只能暂停
+- 只有桶所有者或管理员可以访问此API
+
+**响应**：
+```http
+HTTP/1.1 200 OK
+Content-Length: 0
+```
+
+**错误响应**：
+- 404 Not Found：桶不存在
+- 403 Forbidden：无权限
+- 400 Bad Request：无效的版本控制状态
+- 401 Unauthorized：认证失败
+
+#### 1.6 获取桶对象锁定配置（GetObjectLockConfiguration）
+
+**URL**：`GET /<bucket>?object-lock`
+
+**请求**：
+```http
+GET /mybucket?object-lock HTTP/1.1
+Host: 127.0.0.1:8901
+Authorization: AWS4-HMAC-SHA256 Credential=<AK>/20230101/us-east-1/s3/aws4_request, SignedHeaders=..., Signature=...
+```
+
+**响应**（已启用对象锁定）：
+```xml
+<?xml version="1.0" encoding="UTF-8"?>
+<ObjectLockConfiguration xmlns="http://s3.amazonaws.com/doc/2006-03-01/">
+  <ObjectLockEnabled>Enabled</ObjectLockEnabled>
+  <Rule>
+    <DefaultRetention>
+      <Mode>COMPLIANCE</Mode>
+      <Days>50</Days>
+    </DefaultRetention>
+  </Rule>
+</ObjectLockConfiguration>
+```
+
+**说明**：
+- `ObjectLockEnabled`：固定为 `Enabled`
+- `Mode`：保留模式，`GOVERNANCE`（治理模式）或 `COMPLIANCE`（合规模式）
+- `Days` 或 `Years`：保留期限（互斥）
+- 只有桶所有者或管理员可以访问此API
+
+**响应**（未启用对象锁定）：
+```xml
+<?xml version="1.0" encoding="UTF-8"?>
+<Error>
+  <Code>ObjectLockConfigurationNotFoundError</Code>
+  <Message>Object Lock configuration does not exist for this bucket</Message>
+  <BucketName>mybucket</BucketName>
+</Error>
+```
+
+**错误响应**：
+- 404 Not Found：桶不存在或对象锁定未配置
+- 403 Forbidden：无权限
+- 401 Unauthorized：认证失败
+
 ### 2. 对象操作（Object Operations）
 
 #### 2.1 列出桶中的对象（ListObjects V1）
@@ -459,6 +567,52 @@ Authorization: AWS4-HMAC-SHA256 Credential=<AK>/20230101/us-east-1/s3/aws4_reque
 - 404 Not Found：桶不存在
 - 403 Forbidden：无权限
 
+#### 2.7 获取对象保留配置（GetObjectRetention）
+
+**URL**：`GET /<bucket>/<object>?retention[&versionId=<version_id>]`
+
+**请求参数**：
+- `versionId`（可选）：特定对象版本的ID
+
+**请求**：
+```http
+GET /mybucket/protectedfile.txt?retention HTTP/1.1
+Host: 127.0.0.1:8901
+Authorization: AWS4-HMAC-SHA256 Credential=<AK>/20230101/us-east-1/s3/aws4_request, SignedHeaders=..., Signature=...
+```
+
+**响应**（已配置保留）：
+```xml
+<?xml version="1.0" encoding="UTF-8"?>
+<Retention xmlns="http://s3.amazonaws.com/doc/2006-03-01/">
+  <Mode>COMPLIANCE</Mode>
+  <RetainUntilDate>2023-12-31T12:00:00.000Z</RetainUntilDate>
+</Retention>
+```
+
+**说明**：
+- `Mode`：保留模式，`GOVERNANCE`（治理模式）或 `COMPLIANCE`（合规模式）
+- `RetainUntilDate`：保留截止日期，ISO 8601 格式
+- 只有桶所有者或管理员可以访问此API
+- 如果指定了 `versionId`，则获取该特定版本的保留配置
+
+**响应**（未配置保留）：
+```xml
+<?xml version="1.0" encoding="UTF-8"?>
+<Error>
+  <Code>NoSuchObjectRetention</Code>
+  <Message>The specified object does not have a retention configuration</Message>
+  <BucketName>mybucket</BucketName>
+  <Key>protectedfile.txt</Key>
+</Error>
+```
+
+**错误响应**：
+- 404 Not Found：桶不存在、对象不存在或未配置保留
+- 403 Forbidden：无权限
+- 400 Bad Request：无效的versionId
+- 401 Unauthorized：认证失败
+
 ## 桶名规范
 
 StoreFS 遵循 AWS S3 桶名规范：
@@ -512,11 +666,12 @@ aws s3 --endpoint-url http://127.0.0.1:8901 --profile storefs cp localfile.txt s
 
 目前以下 S3 功能尚未实现：
 
-- 桶策略和 ACL
-- 对象版本控制
+- 桶ACLs
 - 服务器端加密
 - 生命周期管理
-- 跨域资源共享（CORS）
 - 事件通知
+- 放置桶对象锁定配置（PutObjectLockConfiguration）
+- 放置对象保留配置（PutObjectRetention）
+- 对象法律持有（Object Legal Hold）
 
 这些功能将在未来的版本中逐步实现。

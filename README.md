@@ -28,10 +28,13 @@ This project uses Claude Code to automatically generate all codes and documentat
 - **Distributed Architecture**: Node discovery and communication through gossip protocol
 - **Dynamic Scalability**: Supports adding/removing nodes freely without downtime
 - **High-Performance Storage**: Optimized storage engine supporting multiple storage media
+- **High Performance Storage**: Optimized storage engine supporting multiple storage media
 - **Fault Tolerance**: Data automatically recovers when nodes fail
 - **Load Balancing**: Requests are automatically distributed to available nodes
 - **Web Management Console**: Provides an intuitive web interface to manage users, policies, buckets, and objects
 - **Multi-Language Support**: Management console supports Chinese and English
+- **Object Versioning**: Supports bucket-level versioning, keeps historical versions of objects, and prevents accidental deletion or overwriting
+- **Object Locking**: Supports WORM (Write Once, Read Many) model with both Governance and Compliance lock modes
 
 ### Core Concepts
 
@@ -40,6 +43,13 @@ This project uses Claude Code to automatically generate all codes and documentat
 - **Policy**: Defines a user's access permissions to buckets and objects. Policies can precisely control user operations such as read, write, list bucket contents, delete objects, etc.
 
 - **Bucket**: Container for storing objects. Each bucket has a unique name, and users can create, delete, and manage objects within buckets. Buckets can be configured with access policies to control which users can access them.
+
+- **Versioning**: Bucket-level configuration that keeps historical versions of objects. When objects are overwritten or deleted, new versions or delete markers are created, allowing recovery to previous versions.
+
+- **Object Lock**: Bucket-level WORM (Write Once, Read Many) configuration supporting two lock modes:
+  - **Governance Mode**: Users with special permissions can overwrite or delete locked objects
+  - **Compliance Mode**: No user can overwrite or delete locked objects until the retention period expires
+  - Supports default retention policies automatically applied to newly uploaded objects
 
 ### Cluster Architecture
 
@@ -179,7 +189,9 @@ Visit `http://localhost:7946/console` with the default administrator account:
 | User Management | Create/edit/delete users, manage access keys | [Login](docs/pics/login.jpg), [UserList](docs/pics/user.jpg) |
 | Policy Management | Create/edit/delete policies, configure permission rules | [PolicyList](docs/pics/policy.jpg) |
 | Bucket Management | Create/edit/delete buckets, configure access policies | [BucketList](docs/pics/bucket.jpg) |
+| | Create/edit/delete buckets | [CreateVersionBucket](docs/pics/versionBucket.jpg) |
 | Object Management | Upload/download/delete objects, preview file contents | [ObjectList](docs/pics/object.jpg), [ObjectInfo](docs/pics/objectinfo.jpg) |
+| Object Versioning Management | Upload/download/delete objects, preview file contents | [ObjectVersionList](docs/pics/versionObjectList.jpg), [VersionList](docs/pics/versionList.jpg) |
 | Multipart Management | Complete/abort | [MultipartList](docs/pics/multipart.jpg), [MultipartInfo](docs/pics/partdetail.jpg), [MultipartFragmentInfo](docs/pics/partfragment.jpg) |
 | Node Management | View node status, add/remove nodes | [NodeList](docs/pics/node.jpg) |
 | Internationalization | Switch languages | [Internationalization](docs/pics/internationalization.jpg) |
@@ -199,6 +211,8 @@ Main implemented API interfaces include:
 - **Bucket Operations**: Create bucket, list buckets, delete bucket
 - **Object Operations**: Upload object, download object, delete object, list objects
 - **Multipart Operations**: Create multipart upload, upload part, complete multipart upload, abort multipart upload, list parts, list multipart uploads
+- **Versioning Operations**: Get bucket versioning status, set bucket versioning status
+- **Object Lock Operations**: Get bucket object lock configuration, get object retention configuration
 
 ## Admin API
 

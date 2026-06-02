@@ -93,6 +93,7 @@ s3file --silent --connect play.min.io --access-key Q3AM3UQ867SPQQA43P2F --secret
 | `cat <file>` | 显示文件内容 |
 | `upload, up <local> <remote>` | 上传文件 |
 | `download, dl <remote> <local>` | 下载文件 |
+| `lv <object>` | 列出对象的所有版本（按时间倒序） |
 
 #### cp 命令选项
 
@@ -102,12 +103,14 @@ s3file --silent --connect play.min.io --access-key Q3AM3UQ867SPQQA43P2F --secret
 | `-d, --download` | 强制下载模式 |
 | `-f, --force` | 强制覆盖，不进行确认 |
 | `-n, --no-clobber` | 不覆盖已存在的文件 |
+| `--versionId <id>` | 下载对象的特定版本（仅下载模式下使用） |
 
 #### upload/download 选项
 
 | 选项 | 描述 |
 |--------|-------------|
 | `-f, --force` | 强制覆盖，不进行确认 |
+| `--versionId <id>` | 下载对象的特定版本（仅下载时使用） |
 
 ### 删除操作
 
@@ -139,7 +142,7 @@ rm -r --dry-run mydir/         # 预览删除操作
 |---------|-------------|
 | `buckets` | 列出所有存储桶 |
 | `use <bucket>` | 切换到指定存储桶 |
-| `mb <bucket>` | 创建新存储桶 |
+| `mb <bucket> [--versioning]` | 创建新存储桶（可选择启用版本控制） |
 
 ### 连接管理
 
@@ -164,6 +167,22 @@ connect --interactive
 | 命令 | 描述 |
 |---------|-------------|
 | `pagesize [num]` | 设置或查看每页显示的项目数（5-100） |
+
+### 版本管理
+
+| 命令 | 描述 |
+|---------|-------------|
+| `lv <object>` | 按时间倒序列出对象的所有版本 |
+| `download --versionId <id> <remote> <local>` | 下载对象的特定版本 |
+| `cp --versionId <id> <source> <destination>` | 复制对象的特定版本（仅下载模式） |
+| `mb <bucket> --versioning` | 创建启用版本控制的存储桶 |
+
+`lv` 命令会显示：
+- 指定对象的所有版本
+- 哪个版本是最新的（用 ✓ yes 标记）
+- 每个版本的最后修改时间
+- 每个版本的大小
+- 删除标记（如果有）
 
 ### 其他命令
 
@@ -197,7 +216,7 @@ connect --interactive
 ```bash
 $ s3file
 ╔══════════════════════════════════════════════════════════════════════════╗
-║                        S3 File System CLI v0.2.1                         ║
+║                        S3 File System CLI v0.3.0                         ║
 ║      Supports StoreFS, MinIO, AWS S3, and all S3-compatible services     ║
 ╚══════════════════════════════════════════════════════════════════════════╝
 Type 'help' for available commands
