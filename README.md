@@ -140,7 +140,28 @@ e.g., storefs_linux_x86_64
 ./storefs_linux_x86_64 -config config3.yaml
 ```
 
-### 3. Docker Compose Deployment
+### 3. Linux Binary Versions
+
+Two Linux binary versions are available:
+
+#### `storefs_linux` (Standard Version)
+- **Requires**: No special dependencies! Works on any Linux system
+- **Features**: Normal S3 functionality only
+- **Use when**: You don't need RDMA or target system lacks libibverbs
+
+#### `storefs_linux_rdma` (RDMA-Enabled Version)
+- **IMPORTANT**: Will CRASH immediately if `libibverbs` is not installed on target system!
+- **Requires**: `libibverbs` must be installed on target system
+- **Features**: Full RDMA support + normal S3 functionality
+- **Use when**: You need high-performance RDMA data transfers
+
+**How to check for libibverbs**:
+```bash
+ldconfig -p | grep libibverbs
+```
+If you see output, you have libibverbs and can use `storefs_linux_rdma`!
+
+### 4. Docker Compose Deployment
 
 StoreFS provides Docker Compose deployment for quickly starting a 3-node cluster:
 
@@ -170,6 +191,22 @@ docker-compose down
 rm -rf configs/db-init/
 ```
 
+### 4. RDMA Support (Linux Only)
+
+StoreFS supports RDMA (Remote Direct Memory Access) for high-performance data transfers, which bypasses the operating system kernel and TCP/IP stack to achieve extremely low-latency and high-throughput data transfers.
+
+Key features of RDMA support:
+- RDMA READ for upload operations (server reads from client memory directly)
+- RDMA WRITE for download operations (server writes to client memory directly)
+- WebSocket control channel for RDMA connection setup
+- Zero-copy data transfer
+- Support for both hardware RDMA and Soft-RoCE (software emulation)
+
+**Note**: RDMA support is Linux-only. It does not work on macOS, Windows, or other operating systems.
+
+For detailed documentation about RDMA setup, configuration, and usage, please refer to:
+- [RDMA Documentation](docs/rdma.md) - Detailed RDMA documentation in English
+
 ## Management Console
 
 ### Management Console Introduction
@@ -184,7 +221,7 @@ Visit `http://localhost:7946/console` with the default administrator account:
 
 ### Features
 
-| Function Module | Description | Screenshot Location |
+| Function Module | Description | Screenshot |
 |----------------|-------------|---------------------|
 | User Management | Create/edit/delete users, manage access keys | [Login](docs/pics/login.jpg), [UserList](docs/pics/user.jpg) |
 | Policy Management | Create/edit/delete policies, configure permission rules | [PolicyList](docs/pics/policy.jpg) |

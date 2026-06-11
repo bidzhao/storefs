@@ -138,7 +138,28 @@ mysql -h db -P9030 -uroot < /init.sql
 ./storefs_linux_x86_64 -config config3.yaml
 ```
 
-### 3. Docker Compose部署
+### 3. Linux二进制版本说明
+
+提供两个Linux二进制版本：
+
+#### `storefs_linux`（标准版）
+- **运行要求**：无特殊依赖！可在任何Linux系统上运行
+- **功能**：仅普通S3功能
+- **适用场景**：不需要RDMA或目标系统缺少libibverbs时
+
+#### `storefs_linux_rdma`（RDMA版）
+- **重要警告**：如果目标系统没有安装 `libibverbs`，程序会立即崩溃！
+- **运行要求**：目标系统必须安装 `libibverbs`
+- **功能**：完整RDMA支持 + 普通S3功能
+- **适用场景**：需要高性能RDMA数据传输时
+
+**检查系统是否有libibverbs**：
+```bash
+ldconfig -p | grep libibverbs
+```
+如果有输出，说明系统有libibverbs，可以使用`storefs_linux_rdma`！
+
+### 4. Docker Compose部署
 
 StoreFS提供了Docker Compose部署方式，快速启动一个3节点集群：
 
@@ -168,6 +189,22 @@ docker-compose down
 rm -rf configs/db-init/
 ```
 
+### 4. RDMA支持（仅Linux）
+
+StoreFS支持RDMA（远程直接内存访问）用于高性能数据传输，它绕过操作系统内核和TCP/IP协议栈，实现极低延迟和极高吞吐量的数据传输。
+
+RDMA支持的主要特性：
+- RDMA READ用于上传操作（服务器直接从客户端内存读取）
+- RDMA WRITE用于下载操作（服务器直接写入客户端内存）
+- WebSocket控制通道用于RDMA连接建立
+- 零拷贝数据传输
+- 支持硬件RDMA和Soft-RoCE（软件仿真）
+
+**注意**：RDMA支持仅适用于Linux。在macOS、Windows或其他操作系统上无法使用。
+
+有关RDMA设置、配置和使用的详细文档，请参考：
+- [RDMA 文档](docs/rdma_cn.md) - 详细的中文RDMA文档
+
 ## 管理控制台
 
 ### 管理控制台介绍
@@ -182,7 +219,7 @@ StoreFS提供了一个基于Vue.js的Web管理控制台，位于`web`目录下�
 
 ### 功能特性
 
-| 功能模块 | 描述                | 截图位置 |
+| 功能模块 | 描述                | 截图 |
 |------|-------------------|----------|
 | 用户管理 | 创建/编辑/删除用户，管理访问密钥 | [登录](docs/pics/login.jpg), [用户列表](docs/pics/user.jpg) |
 | 策略管理 | 创建/编辑/删除策略，配置权限规则 | [策略列表](docs/pics/policy.jpg) |
