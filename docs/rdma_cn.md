@@ -447,8 +447,8 @@ PutObject和GetObject都使用以下特殊HTTP请求头：
 示例程序应在Linux上编译（因为RDMA仅支持Linux）：
 
 ```bash
-# 进入s3client目录
-cd s3client
+# 进入 go 目录
+cd examples/rdma/go
 
 # 编译s3rdmaput (Go 版本)
 go build -o s3rdmaput s3rdmaput.go rdmalib.go
@@ -461,10 +461,10 @@ go build -o s3rdmaget s3rdmaget.go rdmalib.go
 
 ```bash
 # 编译s3rdmaput
-go build -o s3client/s3rdmaput ./s3client/s3rdmaput.go ./s3client/rdmalib.go
+go build -o examples/rdma/go/s3rdmaput ./examples/rdma/go/s3rdmaput.go ./examples/rdma/go/rdmalib.go
 
 # 编译s3rdmaget
-go build -o s3client/s3rdmaget ./s3client/s3rdmaget.go ./s3client/rdmalib.go
+go build -o examples/rdma/go/s3rdmaget ./examples/rdma/go/s3rdmaget.go ./examples/rdma/go/rdmalib.go
 ```
 
 ### C 版本客户端
@@ -481,7 +481,7 @@ go build -o s3client/s3rdmaget ./s3client/s3rdmaget.go ./s3client/rdmalib.go
 
 ```bash
 # 进入 c 目录
-cd s3client/c
+cd examples/rdma/c
 
 # 使用 make 编译
 make
@@ -517,7 +517,43 @@ C 版本的使用方法与 Go 版本完全一致：
 2. 调用 `s3_get_object()` 或 `s3_head_object()` 进行数据传输
 3. 传输完成后调用 `rdma_session_destroy()` 清理资源
 
-### s3rdmaput.go
+### Python 版本客户端
+
+C 版本 s3rdmaget/s3rdmaput 工具的 Python 重新实现（兼容 Python 2.7 和 3.x）。
+
+libibverbs（RDMA）操作通过一个小型 C shim（`verbs_shim.c`）完成，该 shim 编译为 `librdmaverbs.so` 并通过 `ctypes` 从 Python 调用。其他所有内容（WebSocket 控制通道、JSON 协议、SigV4 签名、S3 HTTP 请求）都是纯 Python。
+
+**编译**：
+
+需要 libibverbs 头文件（在 Debian/Ubuntu 上是 `libibverbs-dev`）：
+
+```bash
+cd examples/rdma/python/py_rdma
+make
+mv librdmaverbs.so ../
+```
+
+这会在 python 目录中生成 `librdmaverbs.so`（rdmalib.py 通过相对于自身的路径加载它）。
+
+**Python 依赖**：
+
+```bash
+pip install -r examples/rdma/python/py_rdma/requirements.txt --break-system-packages
+```
+
+（仅需 `websocket-client`；其他所有内容都是标准库。）
+
+**使用方法**：
+
+```bash
+python s3rdmaget.py -bucket <bucket> -object <key> -file <path> \
+    [-endpoint http://127.0.0.1:8901] [-rdma-dev rxe0] [-ak admin-ak] [-sk admin-sk]
+
+python s3rdmaput.py -bucket <bucket> -object <key> -file <path> \
+    [-endpoint http://127.0.0.1:8901] [-rdma-dev rxe0] [-ak admin-ak] [-sk admin-sk]
+```
+
+### s3rdmaput
 
 `s3rdmaput`是一个命令行客户端，使用RDMA将文件上传到S3存储。
 
@@ -567,7 +603,7 @@ C 版本的使用方法与 Go 版本完全一致：
    - 发送Content-Length: 0的PutObject请求
    - 等待HTTP 200 OK响应
 
-### s3rdmaget.go
+### s3rdmaget
 
 `s3rdmaget`是一个命令行客户端，使用RDMA从S3存储下载文件。
 

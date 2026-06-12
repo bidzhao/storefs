@@ -449,8 +449,8 @@ All WebSocket messages use the following envelope format (JSON):
 The example programs should be compiled on Linux (since RDMA is Linux-only):
 
 ```bash
-# Navigate to the s3client directory
-cd s3client
+# Navigate to the go directory
+cd examples/rdma/go
 
 # Compile s3rdmaput (Go version)
 go build -o s3rdmaput s3rdmaput.go rdmalib.go
@@ -463,10 +463,10 @@ Or build both from the project root:
 
 ```bash
 # Build s3rdmaput
-go build -o s3client/s3rdmaput ./s3client/s3rdmaput.go ./s3client/rdmalib.go
+go build -o examples/rdma/go/s3rdmaput ./examples/rdma/go/s3rdmaput.go ./examples/rdma/go/rdmalib.go
 
 # Build s3rdmaget
-go build -o s3client/s3rdmaget ./s3client/s3rdmaget.go ./s3client/rdmalib.go
+go build -o examples/rdma/go/s3rdmaget ./examples/rdma/go/s3rdmaget.go ./examples/rdma/go/rdmalib.go
 ```
 
 ### C Version Clients
@@ -483,7 +483,7 @@ The C version of the RDMA clients (`s3rdmaget.c` and `s3rdmaput.c`) are also ava
 
 ```bash
 # Navigate to the c directory
-cd s3client/c
+cd examples/rdma/c
 
 # Compile using make
 make
@@ -519,7 +519,43 @@ For integrating RDMA S3 functionality into your own C applications:
 2. Call `s3_get_object()` or `s3_head_object()` for data transfers
 3. Call `rdma_session_destroy()` after transfer completes to clean up resources
 
-### s3rdmaput.go
+### Python Version Clients
+
+Python (2.7 and 3.x compatible) re-implementation of the C s3rdmaget / s3rdmaput tools.
+
+The libibverbs (RDMA) operations are done via a tiny C shim (`verbs_shim.c`) compiled into `librdmaverbs.so` and called from Python with `ctypes`. Everything else (WebSocket control channel, JSON protocol, SigV4 signing, S3 HTTP requests) is pure Python.
+
+**Build**:
+
+Requires libibverbs headers (`libibverbs-dev` on Debian/Ubuntu):
+
+```bash
+cd examples/rdma/python/py_rdma
+make
+mv librdmaverbs.so ../
+```
+
+This produces `librdmaverbs.so` in the python directory (rdmalib.py loads it via a path relative to itself).
+
+**Python dependencies**:
+
+```bash
+pip install -r examples/rdma/python/requirements.txt --break-system-packages
+```
+
+(`websocket-client` only; everything else is stdlib.)
+
+**Usage**:
+
+```bash
+python examples/rdma/python/s3rdmaget.py -bucket <bucket> -object <key> -file <path> \
+    [-endpoint http://127.0.0.1:8901] [-rdma-dev rxe0] [-ak admin-ak] [-sk admin-sk]
+
+python examples/rdma/python/s3rdmaput.py -bucket <bucket> -object <key> -file <path> \
+    [-endpoint http://127.0.0.1:8901] [-rdma-dev rxe0] [-ak admin-ak] [-sk admin-sk]
+```
+
+### s3rdmaput
 
 `s3rdmaput` is a command-line client that uploads a file to the S3 storage using RDMA.
 
@@ -569,7 +605,7 @@ For integrating RDMA S3 functionality into your own C applications:
    - Sends PutObject request with Content-Length: 0
    - Waits for HTTP 200 OK response
 
-### s3rdmaget.go
+### s3rdmaget
 
 `s3rdmaget` is a command-line client that downloads a file from the S3 storage using RDMA.
 
