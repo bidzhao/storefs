@@ -450,10 +450,10 @@ PutObject和GetObject都使用以下特殊HTTP请求头：
 # 进入s3client目录
 cd s3client
 
-# 编译s3rdmaput
+# 编译s3rdmaput (Go 版本)
 go build -o s3rdmaput s3rdmaput.go rdmalib.go
 
-# 编译s3rdmaget
+# 编译s3rdmaget (Go 版本)
 go build -o s3rdmaget s3rdmaget.go rdmalib.go
 ```
 
@@ -466,6 +466,56 @@ go build -o s3client/s3rdmaput ./s3client/s3rdmaput.go ./s3client/rdmalib.go
 # 编译s3rdmaget
 go build -o s3client/s3rdmaget ./s3client/s3rdmaget.go ./s3client/rdmalib.go
 ```
+
+### C 版本客户端
+
+还提供了 C 版本的 RDMA 客户端（`s3rdmaget.c` 和 `s3rdmaput.c`）。
+
+**依赖库**：
+- `libibverbs-dev`
+- `libcurl4-openssl-dev`
+- `libssl-dev`
+- `zlib1g-dev`
+
+**编译方法**：
+
+```bash
+# 进入 c 目录
+cd s3client/c
+
+# 使用 make 编译
+make
+
+# 或者手动编译
+gcc -o s3rdmaget s3rdmaget.c rdmalib.c s3client.c -libverbs -lcurl -lcrypto -lz
+gcc -o s3rdmaput s3rdmaput.c rdmalib.c s3client.c -libverbs -lcurl -lcrypto -lz
+```
+
+**使用方法**：
+
+C 版本的使用方法与 Go 版本完全一致：
+
+```bash
+# 下载对象
+./s3rdmaget -bucket <bucket> -object <key> -file <path> \
+    [-endpoint http://127.0.0.1:8901] [-rdma-dev rxe0] \
+    [-ak admin-ak] [-sk admin-sk]
+```
+
+```bash
+# 上传对象
+./s3rdmaput -bucket <bucket> -object <key> -file <path> \
+    [-endpoint http://127.0.0.1:8901] [-rdma-dev rxe0] \
+    [-ak admin-ak] [-sk admin-sk]
+```
+
+**客户端库使用方法**：
+
+要将 RDMA S3 功能集成到您自己的 C 应用程序中：
+
+1. 调用 `rdma_recv_setup()` 一次 - 该函数处理 WebSocket 注册、QP 建立（RTR/RTS）、内存注册和令牌发送
+2. 调用 `s3_get_object()` 或 `s3_head_object()` 进行数据传输
+3. 传输完成后调用 `rdma_session_destroy()` 清理资源
 
 ### s3rdmaput.go
 

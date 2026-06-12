@@ -194,7 +194,7 @@ Here's the detailed flow for an RDMA-enabled PutObject:
      │     (Content-Length: 0)                      │
      │ ──────────────────────────────────────────>  │
      │                                              │
-     │     13. Server performs RDMA READ             │
+     │     13. Server performs RDMA READ            │
      │        from client's memory                  │
      │                                              │
      │ 14. HTTP 200 OK Response                     │
@@ -452,10 +452,10 @@ The example programs should be compiled on Linux (since RDMA is Linux-only):
 # Navigate to the s3client directory
 cd s3client
 
-# Compile s3rdmaput
+# Compile s3rdmaput (Go version)
 go build -o s3rdmaput s3rdmaput.go rdmalib.go
 
-# Compile s3rdmaget
+# Compile s3rdmaget (Go version)
 go build -o s3rdmaget s3rdmaget.go rdmalib.go
 ```
 
@@ -468,6 +468,56 @@ go build -o s3client/s3rdmaput ./s3client/s3rdmaput.go ./s3client/rdmalib.go
 # Build s3rdmaget
 go build -o s3client/s3rdmaget ./s3client/s3rdmaget.go ./s3client/rdmalib.go
 ```
+
+### C Version Clients
+
+The C version of the RDMA clients (`s3rdmaget.c` and `s3rdmaput.c`) are also available.
+
+**Dependencies**:
+- `libibverbs-dev`
+- `libcurl4-openssl-dev`
+- `libssl-dev`
+- `zlib1g-dev`
+
+**Compilation**:
+
+```bash
+# Navigate to the c directory
+cd s3client/c
+
+# Compile using make
+make
+
+# Or compile manually
+gcc -o s3rdmaget s3rdmaget.c rdmalib.c s3client.c -libverbs -lcurl -lcrypto -lz
+gcc -o s3rdmaput s3rdmaput.c rdmalib.c s3client.c -libverbs -lcurl -lcrypto -lz
+```
+
+**Usage**:
+
+The C version usage is identical to the Go version:
+
+```bash
+# Get object
+./s3rdmaget -bucket <bucket> -object <key> -file <path> \
+    [-endpoint http://127.0.0.1:8901] [-rdma-dev rxe0] \
+    [-ak admin-ak] [-sk admin-sk]
+```
+
+```bash
+# Put object
+./s3rdmaput -bucket <bucket> -object <key> -file <path> \
+    [-endpoint http://127.0.0.1:8901] [-rdma-dev rxe0] \
+    [-ak admin-ak] [-sk admin-sk]
+```
+
+**Client Library Usage**:
+
+For integrating RDMA S3 functionality into your own C applications:
+
+1. Call `rdma_recv_setup()` once - this handles WebSocket registration, QP establishment (RTR/RTS), memory registration, and token sending
+2. Call `s3_get_object()` or `s3_head_object()` for data transfers
+3. Call `rdma_session_destroy()` after transfer completes to clean up resources
 
 ### s3rdmaput.go
 
