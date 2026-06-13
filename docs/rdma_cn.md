@@ -553,6 +553,46 @@ python s3rdmaput.py -bucket <bucket> -object <key> -file <path> \
     [-endpoint http://127.0.0.1:8901] [-rdma-dev rxe0] [-ak admin-ak] [-sk admin-sk]
 ```
 
+### Java 版本客户端
+
+C / Python s3rdmaget / s3rdmaput 工具的 Java 重新实现。需要 Java 11+。
+
+libibverbs（RDMA）操作通过 Python 版本使用的同一个小型 C shim（`native/verbs_shim.c`）完成，编译为 `native/librdmaverbs.so` 并通过 JNA（`com.sun.jna`）从 Java 调用。其他所有内容（通过 `java.net.http.WebSocket` 的 WebSocket 控制通道、通过 `org.json` 的 JSON、SigV4 签名、原始套接字 HTTP）都是纯 Java。
+
+**构建**：
+
+1. 编译原生 verbs shim（需要 `libibverbs-dev`）：
+
+```bash
+cd examples/rdma/java/native
+make
+cd ..
+```
+
+这会生成 `native/librdmaverbs.so`。
+
+2. 构建 jar 包：
+
+```bash
+mvn package
+```
+
+这会生成 `target/s3rdma.jar`，其中包含 JNA 和 org.json。
+
+**使用方法**：
+
+```bash
+java -Djna.library.path=examples/rdma/java/native -cp examples/rdma/java/target/s3rdma.jar com.example.s3rdma.S3RdmaGet \
+    -bucket <bucket> -object <key> -file <path> \
+    [-endpoint http://127.0.0.1:8901] [-rdma-dev rxe0] [-ak admin-ak] [-sk admin-sk]
+
+java -Djna.library.path=examples/rdma/java/native -cp examples/rdma/java/target/s3rdma.jar com.example.s3rdma.S3RdmaPut \
+    -bucket <bucket> -object <key> -file <path> \
+    [-endpoint http://127.0.0.1:8901] [-rdma-dev rxe0] [-ak admin-ak] [-sk admin-sk]
+```
+
+`-Djna.library.path=native`（或任何包含 `librdmaverbs.so` 的目录，或将其添加到 `LD_LIBRARY_PATH`）是必需的，以便 JNA 可以找到原生 verbs shim。
+
 ### s3rdmaput
 
 `s3rdmaput`是一个命令行客户端，使用RDMA将文件上传到S3存储。
