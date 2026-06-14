@@ -28,6 +28,7 @@ StoreFS是一个基于Go语言实现的分布式S3兼容存储系统，采用gos
 - **分布式架构**：通过gossip协议实现节点发现和通信
 - **动态扩展**：支持自由添加/删除节点，无需停机维护
 - **高性能存储**：优化的存储引擎，支持多种存储介质
+- **RDMA加速**：get、put和multipart upload均支持RDMA，用于高吞吐对象传输
 - **容错机制**：节点故障时，数据会自动恢复
 - **负载均衡**：请求会自动分发到可用节点
 - **Web管理控制台**：提供直观的Web界面管理用户、策略、桶和对象
@@ -155,7 +156,7 @@ mysql -h db -P9030 -uroot < /init.sql
 #### `storefs_linux_rdma`（RDMA版）
 - **重要警告**：如果目标系统没有安装 `libibverbs`，程序会立即崩溃！
 - **运行要求**：目标系统必须安装 `libibverbs`
-- **功能**：完整RDMA支持 + 普通S3功能
+- **功能**：get、put和multipart upload均支持RDMA + 普通S3功能
 - **适用场景**：需要高性能RDMA数据传输时
 
 **检查系统是否有libibverbs**：
@@ -196,11 +197,12 @@ rm -rf configs/db-init/
 
 ### 4. RDMA支持（仅Linux）
 
-StoreFS支持RDMA（远程直接内存访问）用于高性能数据传输，它绕过操作系统内核和TCP/IP协议栈，实现极低延迟和极高吞吐量的数据传输。
+StoreFS支持RDMA（远程直接内存访问）用于高性能数据传输，get、put和multipart upload均支持RDMA。RDMA绕过操作系统内核和TCP/IP协议栈，实现极低延迟和极高吞吐量的数据传输。
 
 RDMA支持的主要特性：
-- RDMA READ用于上传操作（服务器直接从客户端内存读取）
-- RDMA WRITE用于下载操作（服务器直接写入客户端内存）
+- GetObject、PutObject和multipart UploadPart均支持RDMA
+- RDMA READ用于put和multipart upload操作（服务器直接从客户端内存读取）
+- RDMA WRITE用于get操作（服务器直接写入客户端内存）
 - WebSocket控制通道用于RDMA连接建立
 - 零拷贝数据传输
 - 支持硬件RDMA和Soft-RoCE（软件仿真）

@@ -2,7 +2,7 @@
 
 ## Overview
 
-This S3-compatible storage system supports RDMA (Remote Direct Memory Access) for high-performance data transfers. RDMA bypasses the operating system kernel and TCP/IP stack, enabling extremely low-latency and high-throughput data transfers between nodes.
+This S3-compatible storage system supports RDMA (Remote Direct Memory Access) for high-performance data transfers, including PutObject, GetObject, and multipart upload (UploadPart) over RDMA. RDMA bypasses the operating system kernel and TCP/IP stack, enabling extremely low-latency and high-throughput data transfers between nodes.
 
 **IMPORTANT**: RDMA support is **Linux-only**. It does not work on macOS, Windows, or other operating systems.
 
@@ -13,7 +13,7 @@ Two Linux binary versions are available:
 ### 1. RDMA Version (`storefs_linux_rdma`)
 - **IMPORTANT**: Will CRASH immediately if `libibverbs` is not installed on target system!
 - **Requires**: `libibverbs` must be installed on target system
-- **Features**: Full RDMA support + normal S3 functionality
+- **Features**: Full RDMA support (PutObject, GetObject, multipart UploadPart) + normal S3 functionality
 - **Use when**: You need high-performance RDMA transfers
 
 ### 2. Standard Version (`storefs_linux`)
@@ -131,7 +131,7 @@ The `rdma_dev` field specifies the RDMA device name (typically `rxe0` for Soft-R
 
 ### Client Configuration
 
-When using the RDMA-enabled clients (`s3rdmaput` and `s3rdmaget`), you can specify the RDMA device via the `-rdma-dev` flag:
+When using the RDMA-enabled clients (`s3rdmaput`, `s3rdmaget`, and `s3rdmamultipart`), you can specify the RDMA device via the `-rdma-dev` flag:
 
 ```bash
 # For Put
@@ -139,6 +139,9 @@ When using the RDMA-enabled clients (`s3rdmaput` and `s3rdmaget`), you can speci
 
 # For Get
 ./s3rdmaget -rdma-dev rxe0 -bucket mybucket -object myobject -file myfile.dat
+
+# For multipart upload
+./s3rdmamultipart -rdma-dev rxe0 -bucket mybucket -object bigfile.dat -file ./bigfile.dat -action all
 ```
 
 ## RDMA Protocol Flow
@@ -202,6 +205,17 @@ Here's the detailed flow for an RDMA-enabled PutObject:
      │                                              │
 ```
 
+### S3 UploadPart with RDMA
+
+Multipart UploadPart reuses the same RDMA upload data path as PutObject. The multipart control operations (`CreateMultipartUpload`, `CompleteMultipartUpload`, `ListParts`, and `AbortMultipartUpload`) remain normal S3 API calls. For each part:
+
+1. Establish a new `/rdma-ctrl` control session with a unique Request ID.
+2. Send a token whose `Length` is the size of that part.
+3. Send the S3 `UploadPart` request with `uploadId`, `partNumber`, `X-RDMA-Request-ID`, and an empty HTTP body (`Content-Length: 0`).
+4. The server uses the token length as the actual part size and performs RDMA READ from the client's memory.
+
+Do not reuse one Request ID for multiple parts. If a part is uploaded again with the same `partNumber`, normal multipart replacement semantics apply.
+
 ### S3 GetObject with RDMA
 
 Here's the detailed flow for an RDMA-enabled GetObject:
@@ -264,7 +278,7 @@ Here's the detailed flow for an RDMA-enabled GetObject:
 
 ### Common RDMA Headers
 
-Both PutObject and GetObject use the following special HTTP header:
+PutObject, GetObject, and multipart UploadPart use the following special HTTP header:
 
 | Header | Description | Required |
 |--------|-------------|----------|
@@ -275,6 +289,12 @@ Both PutObject and GetObject use the following special HTTP header:
 ### PutObject Specific Notes
 
 - **Content-Length**: Set to `0` even when transferring data. The actual object size is conveyed via the Token message over WebSocket.
+
+### UploadPart Specific Notes
+
+- **Content-Length**: Set to `0` for the HTTP UploadPart request. The actual part size is conveyed by the Token `Length` field over WebSocket.
+- **Request ID**: Use a unique `X-RDMA-Request-ID` for each part transfer.
+- **Multipart control plane**: Create, complete, list, and abort multipart upload operations do not require RDMA.
 
 ### GetObject Specific Notes
 
@@ -457,6 +477,9 @@ go build -o s3rdmaput s3rdmaput.go rdmalib.go
 
 # Compile s3rdmaget (Go version)
 go build -o s3rdmaget s3rdmaget.go rdmalib.go
+
+# Compile s3rdmamultipart (Go version)
+go build -o s3rdmamultipart s3rdmamultipart.go rdmalib.go
 ```
 
 Or build both from the project root:
@@ -467,11 +490,14 @@ go build -o examples/rdma/go/s3rdmaput ./examples/rdma/go/s3rdmaput.go ./example
 
 # Build s3rdmaget
 go build -o examples/rdma/go/s3rdmaget ./examples/rdma/go/s3rdmaget.go ./examples/rdma/go/rdmalib.go
+
+# Build s3rdmamultipart
+go build -o examples/rdma/go/s3rdmamultipart ./examples/rdma/go/s3rdmamultipart.go ./examples/rdma/go/rdmalib.go
 ```
 
 ### C Version Clients
 
-The C version of the RDMA clients (`s3rdmaget.c` and `s3rdmaput.c`) are also available.
+The C version of the RDMA clients (`s3rdmaget.c`, `s3rdmaput.c`, and `s3rdmamultipart.c`) are also available.
 
 **Dependencies**:
 - `libibverbs-dev`
@@ -491,6 +517,7 @@ make
 # Or compile manually
 gcc -o s3rdmaget s3rdmaget.c rdmalib.c s3client.c -libverbs -lcurl -lcrypto -lz
 gcc -o s3rdmaput s3rdmaput.c rdmalib.c s3client.c -libverbs -lcurl -lcrypto -lz
+gcc -o s3rdmamultipart s3rdmamultipart.c rdmalib.c s3client.c -libverbs -lcurl -lcrypto -lz
 ```
 
 **Usage**:
@@ -508,6 +535,11 @@ The C version usage is identical to the Go version:
 # Put object
 ./s3rdmaput -bucket <bucket> -object <key> -file <path> \
     [-endpoint http://127.0.0.1:8901] [-rdma-dev rxe0] \
+    [-ak admin-ak] [-sk admin-sk]
+
+# Multipart upload over RDMA
+./s3rdmamultipart -action all -bucket <bucket> -object <key> -file <path> \
+    [-partsize 5242880] [-endpoint http://127.0.0.1:8901] [-rdma-dev rxe0] \
     [-ak admin-ak] [-sk admin-sk]
 ```
 
@@ -553,6 +585,9 @@ python examples/rdma/python/s3rdmaget.py -bucket <bucket> -object <key> -file <p
 
 python examples/rdma/python/s3rdmaput.py -bucket <bucket> -object <key> -file <path> \
     [-endpoint http://127.0.0.1:8901] [-rdma-dev rxe0] [-ak admin-ak] [-sk admin-sk]
+
+python examples/rdma/python/s3rdmamultipart.py -action all -bucket <bucket> -object <key> -file <path> \
+    [-partsize 5242880] [-endpoint http://127.0.0.1:8901] [-rdma-dev rxe0] [-ak admin-ak] [-sk admin-sk]
 ```
 
 ### Java Version Clients
@@ -591,6 +626,10 @@ java -Djna.library.path=examples/rdma/java/native -cp examples/rdma/java/target/
 java -Djna.library.path=examples/rdma/java/native -cp examples/rdma/java/target/s3rdma.jar com.example.s3rdma.S3RdmaPut \
     -bucket <bucket> -object <key> -file <path> \
     [-endpoint http://127.0.0.1:8901] [-rdma-dev rxe0] [-ak admin-ak] [-sk admin-sk]
+
+java -Djna.library.path=examples/rdma/java/native -cp examples/rdma/java/target/s3rdma.jar com.example.s3rdma.S3RdmaMultipart \
+    -action all -bucket <bucket> -object <key> -file <path> \
+    [-partsize 5242880] [-endpoint http://127.0.0.1:8901] [-rdma-dev rxe0] [-ak admin-ak] [-sk admin-sk]
 ```
 
 `-Djna.library.path=native` (or any directory containing `librdmaverbs.so`, or add it to `LD_LIBRARY_PATH`) is required so JNA can find the native verbs shim.
@@ -644,6 +683,58 @@ java -Djna.library.path=examples/rdma/java/native -cp examples/rdma/java/target/
    - Creates a custom HTTP transport that adds the `X-RDMA-Request-ID` header
    - Sends PutObject request with Content-Length: 0
    - Waits for HTTP 200 OK response
+
+### s3rdmamultipart
+
+`s3rdmamultipart` is a command-line client that performs S3 multipart uploads with each `UploadPart` transferred over RDMA. Multipart control operations are normal S3 requests, while part data moves through RDMA.
+
+**Usage**:
+```bash
+./s3rdmamultipart -action <all|create|upload|list|list-uploads|complete|abort> \
+    -bucket <bucket_name> [-object <object_name>] [-file <file_path>] \
+    [-uploadid <upload_id>] [-part <part_number>] [-partsize <bytes>] \
+    [-endpoint <s3_endpoint>] [-rdma-dev <rdma_device>] \
+    [-ak <access_key>] [-sk <secret_key>]
+```
+
+**Examples**:
+```bash
+# Create, upload all parts via RDMA, and complete the multipart upload
+./s3rdmamultipart -action all -bucket mybucket -object bigfile.dat -file ./bigfile.dat \
+    -partsize 5242880 -endpoint http://127.0.0.1:8901 -rdma-dev rxe0 \
+    -ak admin-ak -sk admin-sk
+
+# Manual flow: create upload, upload one or all parts, list parts, complete
+./s3rdmamultipart -action create -bucket mybucket -object bigfile.dat
+./s3rdmamultipart -action upload -bucket mybucket -object bigfile.dat -file ./bigfile.dat \
+    -uploadid <upload-id> -part 1
+./s3rdmamultipart -action list -bucket mybucket -object bigfile.dat -uploadid <upload-id>
+./s3rdmamultipart -action complete -bucket mybucket -object bigfile.dat -uploadid <upload-id>
+
+# Abort an unfinished multipart upload
+./s3rdmamultipart -action abort -bucket mybucket -object bigfile.dat -uploadid <upload-id>
+```
+
+**Actions**:
+
+| Action | Description |
+|--------|-------------|
+| `all` | Create a multipart upload, upload all parts over RDMA, then complete it |
+| `create` | Create a multipart upload and print the Upload ID |
+| `upload` | Upload all parts, or one part when `-part <n>` is specified, over RDMA |
+| `list` | List uploaded parts for an Upload ID |
+| `list-uploads` | List in-progress multipart uploads, optionally filtered by prefix/delimiter |
+| `complete` | Complete an upload using the currently listed parts |
+| `abort` | Abort an unfinished multipart upload |
+
+**Key Implementation Details**:
+
+1. **Multipart Control Plane**: Uses normal S3 APIs for `CreateMultipartUpload`, `ListParts`, `ListMultipartUploads`, `CompleteMultipartUpload`, and `AbortMultipartUpload`.
+2. **Part Splitting**: Splits the local file by `-partsize` (default 5 MiB). Empty files are not supported by the RDMA multipart client.
+3. **Per-Part RDMA Setup**: For each part, creates a unique Request ID and establishes a new `/rdma-ctrl` WebSocket session.
+4. **Memory Registration**: Maps or loads the part data and registers the memory for REMOTE_READ.
+5. **UploadPart Request**: Sends S3 `UploadPart` with `partNumber`, `uploadId`, `X-RDMA-Request-ID`, and `Content-Length: 0`; the server reads the part bytes from the registered memory by RDMA.
+6. **Completion**: Collects uploaded part ETags and sends `CompleteMultipartUpload`.
 
 ### s3rdmaget
 

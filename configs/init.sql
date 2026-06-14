@@ -59,7 +59,7 @@ CREATE TABLE IF NOT EXISTS buckets
     name           VARCHAR(128) NOT NULL COMMENT 'bucket name (unique)',
     policy_id      BIGINT       NOT NULL COMMENT 'associated policy id',
     owner_id       BIGINT       NOT NULL COMMENT 'owner user id',
-    versioning     VARCHAR(64)  NOT NULL DEFAULT 'disabled' COMMENT 'versioning status: unversioned/enabled/suspended',
+    versioning     VARCHAR(64)  NOT NULL DEFAULT 'Unversioned' COMMENT 'versioning status: Unversioned/Enabled/Suspended',
     is_locked      BOOLEAN      NOT NULL DEFAULT '0' COMMENT 'object lock on/off',
     lock_mode      VARCHAR(128) NOT NULL DEFAULT 'COMPLIANCE' COMMENT 'object lock mode: COMPLIANCE/GOVERNANCE',
     retention      BIGINT       NOT NULL DEFAULT '30' COMMENT 'retention days',

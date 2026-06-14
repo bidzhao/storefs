@@ -2,7 +2,7 @@
 
 ## 概述
 
-这个兼容S3的存储系统支持RDMA（远程直接内存访问），用于高性能数据传输。RDMA绕过操作系统内核和TCP/IP协议栈，实现节点间极低延迟和极高吞吐量的数据传输。
+这个兼容S3的存储系统支持RDMA（远程直接内存访问），用于高性能数据传输，明确支持通过RDMA执行PutObject、GetObject以及分片上传（multipart UploadPart）。RDMA绕过操作系统内核和TCP/IP协议栈，实现节点间极低延迟和极高吞吐量的数据传输。
 
 **重要提示**：RDMA支持**仅适用于Linux**。在macOS、Windows或其他操作系统上无法使用。
 
@@ -13,7 +13,7 @@
 ### 1. RDMA版（`storefs_linux_rdma`）
 - **重要警告**：如果目标系统没有安装 `libibverbs`，程序会立即崩溃！
 - **运行要求**：目标系统必须安装 `libibverbs`
-- **功能**：完整RDMA支持 + 普通S3功能
+- **功能**：完整RDMA支持（PutObject、GetObject、multipart UploadPart）+ 普通S3功能
 - **适用场景**：需要高性能RDMA传输时
 
 ### 2. 标准版（`storefs_linux`）
@@ -129,7 +129,7 @@ cluster:
 
 ### 客户端配置
 
-使用支持RDMA的客户端（`s3rdmaput`和`s3rdmaget`）时，可以通过`-rdma-dev`标志指定RDMA设备：
+使用支持RDMA的客户端（`s3rdmaput`、`s3rdmaget`和`s3rdmamultipart`）时，可以通过`-rdma-dev`标志指定RDMA设备：
 
 ```bash
 # 上传文件
@@ -137,6 +137,9 @@ cluster:
 
 # 下载文件
 ./s3rdmaget -rdma-dev rxe0 -bucket mybucket -object myobject -file myfile.dat
+
+# RDMA分片上传
+./s3rdmamultipart -rdma-dev rxe0 -bucket mybucket -object bigfile.dat -file ./bigfile.dat -action all
 ```
 
 ## RDMA协议流程
@@ -200,6 +203,17 @@ RDMA传输使用两个通道：
      │                                              │
 ```
 
+### 使用RDMA的S3 UploadPart
+
+Multipart UploadPart复用与PutObject相同的RDMA上传数据路径。分片上传的控制操作（`CreateMultipartUpload`、`CompleteMultipartUpload`、`ListParts`和`AbortMultipartUpload`）仍然是普通S3 API调用。对于每个分片：
+
+1. 使用唯一的Request ID建立新的`/rdma-ctrl`控制会话。
+2. 发送Token，Token中的`Length`为该分片的大小。
+3. 发送S3 `UploadPart`请求，携带`uploadId`、`partNumber`、`X-RDMA-Request-ID`，并使用空HTTP body（`Content-Length: 0`）。
+4. 服务端使用Token长度作为实际分片大小，并从客户端内存执行RDMA READ。
+
+不要为多个分片复用同一个Request ID。如果使用相同的`partNumber`重新上传分片，则遵循标准multipart分片替换语义。
+
 ### 使用RDMA的S3 GetObject
 
 以下是支持RDMA的GetObject的详细流程：
@@ -262,7 +276,7 @@ RDMA传输使用两个通道：
 
 ### 通用RDMA请求头
 
-PutObject和GetObject都使用以下特殊HTTP请求头：
+PutObject、GetObject和multipart UploadPart都使用以下特殊HTTP请求头：
 
 | 请求头 | 描述 | 是否必需 |
 |--------|------|----------|
@@ -273,6 +287,12 @@ PutObject和GetObject都使用以下特殊HTTP请求头：
 ### PutObject特定说明
 
 - **Content-Length**：即使在传输数据时也设置为`0`。实际对象大小通过WebSocket上的Token消息传递。
+
+### UploadPart特定说明
+
+- **Content-Length**：HTTP UploadPart请求设置为`0`。实际分片大小通过WebSocket上的Token `Length`字段传递。
+- **Request ID**：每个分片传输都必须使用唯一的`X-RDMA-Request-ID`。
+- **Multipart控制面**：创建、完成、列出和中止分片上传操作不需要RDMA。
 
 ### GetObject特定说明
 
@@ -455,6 +475,9 @@ go build -o s3rdmaput s3rdmaput.go rdmalib.go
 
 # 编译s3rdmaget (Go 版本)
 go build -o s3rdmaget s3rdmaget.go rdmalib.go
+
+# 编译s3rdmamultipart (Go 版本)
+go build -o s3rdmamultipart s3rdmamultipart.go rdmalib.go
 ```
 
 或者从项目根目录编译：
@@ -465,11 +488,14 @@ go build -o examples/rdma/go/s3rdmaput ./examples/rdma/go/s3rdmaput.go ./example
 
 # 编译s3rdmaget
 go build -o examples/rdma/go/s3rdmaget ./examples/rdma/go/s3rdmaget.go ./examples/rdma/go/rdmalib.go
+
+# 编译s3rdmamultipart
+go build -o examples/rdma/go/s3rdmamultipart ./examples/rdma/go/s3rdmamultipart.go ./examples/rdma/go/rdmalib.go
 ```
 
 ### C 版本客户端
 
-还提供了 C 版本的 RDMA 客户端（`s3rdmaget.c` 和 `s3rdmaput.c`）。
+还提供了 C 版本的 RDMA 客户端（`s3rdmaget.c`、`s3rdmaput.c`和`s3rdmamultipart.c`）。
 
 **依赖库**：
 - `libibverbs-dev`
@@ -489,6 +515,7 @@ make
 # 或者手动编译
 gcc -o s3rdmaget s3rdmaget.c rdmalib.c s3client.c -libverbs -lcurl -lcrypto -lz
 gcc -o s3rdmaput s3rdmaput.c rdmalib.c s3client.c -libverbs -lcurl -lcrypto -lz
+gcc -o s3rdmamultipart s3rdmamultipart.c rdmalib.c s3client.c -libverbs -lcurl -lcrypto -lz
 ```
 
 **使用方法**：
@@ -506,6 +533,11 @@ C 版本的使用方法与 Go 版本完全一致：
 # 上传对象
 ./s3rdmaput -bucket <bucket> -object <key> -file <path> \
     [-endpoint http://127.0.0.1:8901] [-rdma-dev rxe0] \
+    [-ak admin-ak] [-sk admin-sk]
+
+# 通过RDMA进行分片上传
+./s3rdmamultipart -action all -bucket <bucket> -object <key> -file <path> \
+    [-partsize 5242880] [-endpoint http://127.0.0.1:8901] [-rdma-dev rxe0] \
     [-ak admin-ak] [-sk admin-sk]
 ```
 
@@ -551,6 +583,9 @@ python s3rdmaget.py -bucket <bucket> -object <key> -file <path> \
 
 python s3rdmaput.py -bucket <bucket> -object <key> -file <path> \
     [-endpoint http://127.0.0.1:8901] [-rdma-dev rxe0] [-ak admin-ak] [-sk admin-sk]
+
+python s3rdmamultipart.py -action all -bucket <bucket> -object <key> -file <path> \
+    [-partsize 5242880] [-endpoint http://127.0.0.1:8901] [-rdma-dev rxe0] [-ak admin-ak] [-sk admin-sk]
 ```
 
 ### Java 版本客户端
@@ -589,6 +624,10 @@ java -Djna.library.path=examples/rdma/java/native -cp examples/rdma/java/target/
 java -Djna.library.path=examples/rdma/java/native -cp examples/rdma/java/target/s3rdma.jar com.example.s3rdma.S3RdmaPut \
     -bucket <bucket> -object <key> -file <path> \
     [-endpoint http://127.0.0.1:8901] [-rdma-dev rxe0] [-ak admin-ak] [-sk admin-sk]
+
+java -Djna.library.path=examples/rdma/java/native -cp examples/rdma/java/target/s3rdma.jar com.example.s3rdma.S3RdmaMultipart \
+    -action all -bucket <bucket> -object <key> -file <path> \
+    [-partsize 5242880] [-endpoint http://127.0.0.1:8901] [-rdma-dev rxe0] [-ak admin-ak] [-sk admin-sk]
 ```
 
 `-Djna.library.path=native`（或任何包含 `librdmaverbs.so` 的目录，或将其添加到 `LD_LIBRARY_PATH`）是必需的，以便 JNA 可以找到原生 verbs shim。
@@ -642,6 +681,58 @@ java -Djna.library.path=examples/rdma/java/native -cp examples/rdma/java/target/
    - 创建自定义HTTP传输，添加`X-RDMA-Request-ID`请求头
    - 发送Content-Length: 0的PutObject请求
    - 等待HTTP 200 OK响应
+
+### s3rdmamultipart
+
+`s3rdmamultipart`是一个命令行客户端，用于执行S3分片上传，并通过RDMA传输每个`UploadPart`的数据。分片上传控制操作仍然是普通S3请求，分片数据则通过RDMA传输。
+
+**用法**：
+```bash
+./s3rdmamultipart -action <all|create|upload|list|list-uploads|complete|abort> \
+    -bucket <bucket_name> [-object <object_name>] [-file <file_path>] \
+    [-uploadid <upload_id>] [-part <part_number>] [-partsize <bytes>] \
+    [-endpoint <s3_endpoint>] [-rdma-dev <rdma_device>] \
+    [-ak <access_key>] [-sk <secret_key>]
+```
+
+**示例**：
+```bash
+# 创建multipart upload、通过RDMA上传所有分片并完成上传
+./s3rdmamultipart -action all -bucket mybucket -object bigfile.dat -file ./bigfile.dat \
+    -partsize 5242880 -endpoint http://127.0.0.1:8901 -rdma-dev rxe0 \
+    -ak admin-ak -sk admin-sk
+
+# 手动流程：创建upload、上传一个或所有分片、列出分片、完成上传
+./s3rdmamultipart -action create -bucket mybucket -object bigfile.dat
+./s3rdmamultipart -action upload -bucket mybucket -object bigfile.dat -file ./bigfile.dat \
+    -uploadid <upload-id> -part 1
+./s3rdmamultipart -action list -bucket mybucket -object bigfile.dat -uploadid <upload-id>
+./s3rdmamultipart -action complete -bucket mybucket -object bigfile.dat -uploadid <upload-id>
+
+# 中止未完成的分片上传
+./s3rdmamultipart -action abort -bucket mybucket -object bigfile.dat -uploadid <upload-id>
+```
+
+**操作**：
+
+| 操作 | 描述 |
+|------|------|
+| `all` | 创建分片上传、通过RDMA上传所有分片，然后完成上传 |
+| `create` | 创建分片上传并打印Upload ID |
+| `upload` | 通过RDMA上传所有分片；指定`-part <n>`时只上传单个分片 |
+| `list` | 列出指定Upload ID已经上传的分片 |
+| `list-uploads` | 列出进行中的分片上传，可按prefix/delimiter过滤 |
+| `complete` | 使用当前已列出的分片完成上传 |
+| `abort` | 中止未完成的分片上传 |
+
+**关键实现细节**：
+
+1. **Multipart控制面**：使用普通S3 API执行`CreateMultipartUpload`、`ListParts`、`ListMultipartUploads`、`CompleteMultipartUpload`和`AbortMultipartUpload`。
+2. **分片切分**：按照`-partsize`切分本地文件（默认5 MiB）。RDMA multipart客户端不支持空文件。
+3. **每个分片独立RDMA设置**：每个分片都会创建唯一Request ID，并建立新的`/rdma-ctrl` WebSocket会话。
+4. **内存注册**：映射或加载分片数据，并为REMOTE_READ注册内存区域。
+5. **UploadPart请求**：发送S3 `UploadPart`请求，携带`partNumber`、`uploadId`、`X-RDMA-Request-ID`和`Content-Length: 0`；服务端通过RDMA从已注册内存读取分片字节。
+6. **完成上传**：收集已上传分片的ETag并发送`CompleteMultipartUpload`。
 
 ### s3rdmaget
 

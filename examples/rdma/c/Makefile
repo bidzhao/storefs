@@ -4,7 +4,7 @@ LDFLAGS = -libverbs -lcurl -lcrypto -lz
 
 COMMON_OBJS = rdmalib.o s3client.o
 
-all: s3rdmaget s3rdmaput
+all: s3rdmaget s3rdmaput s3rdmamultipart
 
 s3rdmaget: s3rdmaget.o $(COMMON_OBJS)
 	$(CC) $(CFLAGS) -o $@ $^ $(LDFLAGS)
@@ -12,10 +12,13 @@ s3rdmaget: s3rdmaget.o $(COMMON_OBJS)
 s3rdmaput: s3rdmaput.o $(COMMON_OBJS)
 	$(CC) $(CFLAGS) -o $@ $^ $(LDFLAGS)
 
+s3rdmamultipart: s3rdmamultipart.o $(COMMON_OBJS)
+	$(CC) $(CFLAGS) -o $@ $^ $(LDFLAGS)
+
 %.o: %.c
 	$(CC) $(CFLAGS) -c -o $@ $<
 
 clean:
-	rm -f s3rdmaget s3rdmaput *.o
+	rm -f s3rdmaget s3rdmaput s3rdmamultipart *.o
 
 .PHONY: all clean

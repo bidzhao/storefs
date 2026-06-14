@@ -29,7 +29,7 @@ This project uses Claude Code to automatically generate all codes and documentat
 - **Distributed Architecture**: Node discovery and communication through gossip protocol
 - **Dynamic Scalability**: Supports adding/removing nodes freely without downtime
 - **High-Performance Storage**: Optimized storage engine supporting multiple storage media
-- **High Performance Storage**: Optimized storage engine supporting multiple storage media
+- **RDMA Acceleration**: Get, put, and multipart upload all support RDMA for high-throughput object transfer
 - **Fault Tolerance**: Data automatically recovers when nodes fail
 - **Load Balancing**: Requests are automatically distributed to available nodes
 - **Web Management Console**: Provides an intuitive web interface to manage users, policies, buckets, and objects
@@ -157,7 +157,7 @@ Two Linux binary versions are available:
 #### `storefs_linux_rdma` (RDMA-Enabled Version)
 - **IMPORTANT**: Will CRASH immediately if `libibverbs` is not installed on target system!
 - **Requires**: `libibverbs` must be installed on target system
-- **Features**: Full RDMA support + normal S3 functionality
+- **Features**: Full RDMA support for get, put, and multipart upload + normal S3 functionality
 - **Use when**: You need high-performance RDMA data transfers
 
 **How to check for libibverbs**:
@@ -198,11 +198,12 @@ rm -rf configs/db-init/
 
 ### 4. RDMA Support (Linux Only)
 
-StoreFS supports RDMA (Remote Direct Memory Access) for high-performance data transfers, which bypasses the operating system kernel and TCP/IP stack to achieve extremely low-latency and high-throughput data transfers.
+StoreFS supports RDMA (Remote Direct Memory Access) for high-performance data transfers, including get, put, and multipart upload. RDMA bypasses the operating system kernel and TCP/IP stack to achieve extremely low-latency and high-throughput data transfers.
 
 Key features of RDMA support:
-- RDMA READ for upload operations (server reads from client memory directly)
-- RDMA WRITE for download operations (server writes to client memory directly)
+- GetObject, PutObject, and multipart UploadPart all support RDMA
+- RDMA READ for put and multipart upload operations (server reads from client memory directly)
+- RDMA WRITE for get operations (server writes to client memory directly)
 - WebSocket control channel for RDMA connection setup
 - Zero-copy data transfer
 - Support for both hardware RDMA and Soft-RoCE (software emulation)
