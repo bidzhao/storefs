@@ -10,6 +10,7 @@
 - [Overview](#overview)
 - [Installation and Deployment](#installation-and-deployment)
 - [Management Console](#management-console)
+- [User Roles and Groups](#user-roles-and-groups)
 - [S3 API](#s3-api)
 - [Admin API](#admin-api)
 - [s3file CLI](#s3file-cli)
@@ -38,7 +39,11 @@ This project uses Claude Code to automatically generate all codes and documentat
 
 ### Core Concepts
 
-- **User**: System user with a unique identity. Each user can have different roles, which determine the user's permission scope. Users authenticate using Access Key (AK) and Secret Key (SK).
+- **User**: System user with a unique identity. Each user has a role (`user`, `group_admin`, or `super_admin`) and usually belongs to a group. Users authenticate using Access Key (AK) and Secret Key (SK).
+
+- **Role**: Determines the user's management scope and storage access behavior. Normal users manage their own resources, group administrators manage users and resources in their group, and super administrators manage global system configuration but do not directly access S3 object data.
+
+- **Group**: Organizes users for delegated administration and shared policy defaults. A group can define a default policy that is applied when creating buckets without explicitly selecting a policy.
 
 - **Policy**: Defines a user's access permissions to buckets and objects. Policies can precisely control user operations such as read, write, list bucket contents, delete objects, etc.
 
@@ -218,12 +223,13 @@ StoreFS provides a Vue.js-based web management console located in the `web` dire
 Visit `http://localhost:7946/console` with the default administrator account:
 - Username: admin
 - Password: admin123
+- Role: `super_admin` (super admin)
 
 ### Features
 
 | Function Module | Description | Screenshot |
 |----------------|-------------|---------------------|
-| User Management | Create/edit/delete users, manage access keys | [Login](docs/pics/login.jpg), [UserList](docs/pics/user.jpg) |
+| User Management | Create/edit/delete users, manage access keys | [Login](docs/pics/login.jpg), [UserList](docs/pics/user.jpg), [GroupList](docs/pics/grouplist.jpg) |
 | Policy Management | Create/edit/delete policies, configure permission rules | [PolicyList](docs/pics/policy.jpg) |
 | Bucket Management | Create/edit/delete buckets, configure access policies | [BucketList](docs/pics/bucket.jpg) |
 | | Create/edit/delete buckets | [CreateVersionBucket](docs/pics/versionBucket.jpg) |
@@ -232,6 +238,22 @@ Visit `http://localhost:7946/console` with the default administrator account:
 | Multipart Management | Complete/abort | [MultipartList](docs/pics/multipart.jpg), [MultipartInfo](docs/pics/partdetail.jpg), [MultipartFragmentInfo](docs/pics/partfragment.jpg) |
 | Node Management | View node status, add/remove nodes | [NodeList](docs/pics/node.jpg) |
 | Internationalization | Switch languages | [Internationalization](docs/pics/internationalization.jpg) |
+
+## User Roles and Groups
+
+### Overview
+
+StoreFS uses role-based access control together with user groups. A user belongs to a group and receives one of three roles: `user`, `group_admin`, or `super_admin`. Groups make it possible to delegate administration by team or tenant, and each group can configure a default policy for buckets created by users in that group.
+
+### Role Permissions
+
+| Role | Management Console / Admin API Permissions | S3 API and Object Data Permissions | Group Scope |
+|------|-------------------------------------------|------------------------------------|-------------|
+| `user` | Manage own buckets, objects, profile, and access keys | Can access buckets owned by the user according to bucket policy | Own account and own buckets |
+| `group_admin` | Manage users, buckets, objects, and group settings within the same group; can assign `user` and `group_admin` roles in the group | Can access buckets owned by users in the same group according to bucket policy | Current group only |
+| `super_admin` | Manage all groups, users, policies, buckets, nodes, and global system resources; can create or assign `super_admin` users | Cannot directly access S3 API buckets or read/write object data; should delegate data operations to regular or group admin users | Global system scope |
+
+> Note: Bucket policies still control the detailed S3 actions, such as read, write, list, and delete. Roles define the management boundary and the bucket ownership scope that a user can operate on.
 
 ## S3 API
 
@@ -336,7 +358,7 @@ aws s3 cp s3://mybucket/localfile.txt . --endpoint-url http://127.0.0.1:8901 --p
 ### 3. Use Management Console
 
 1. Visit `http://localhost:7946/console`
-2. Log in with the default administrator account (username: admin, password: admin123)
+2. Log in with the default administrator account (username: admin, password: admin123, role: `super_admin`)
 3. Create users, policies, and buckets
 4. Manage your storage resources
 
