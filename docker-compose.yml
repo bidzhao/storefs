@@ -1,6 +1,6 @@
 services:
   node1:
-    image: bidzhao/storefs:0.3.3
+    image: bidzhao/storefs:0.3.4
     container_name: storefs-node1
     restart: unless-stopped
     networks:
@@ -32,7 +32,7 @@ services:
         max-file: "3"
 
   node2:
-    image: bidzhao/storefs:0.3.3
+    image: bidzhao/storefs:0.3.4
     container_name: storefs-node2
     restart: unless-stopped
     networks:
@@ -62,7 +62,7 @@ services:
         max-file: "3"
 
   node3:
-    image: bidzhao/storefs:0.3.3
+    image: bidzhao/storefs:0.3.4
     container_name: storefs-node3
     restart: unless-stopped
     networks:
@@ -92,7 +92,7 @@ services:
         max-file: "3"
 
   db:
-    image: starrocks/allin1-ubuntu:4.0.7
+    image: starrocks/allin1-ubuntu:4.1.1
     container_name: storefs-starrocks-allin1
     restart: unless-stopped
     ports:
@@ -120,7 +120,7 @@ services:
         max-file: "3"
 
   init-db:
-    image: starrocks/allin1-ubuntu:4.0.7
+    image: starrocks/allin1-ubuntu:4.1.1
     container_name: storefs-init-db
     restart: "no"
     depends_on:

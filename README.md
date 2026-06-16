@@ -111,9 +111,10 @@ StoreFS uses StarRocks as metadata storage, so StarRocks needs to be deployed fi
 
 ```bash
 # Download and start StarRocks (single-node deployment)
-wget https://repos-starrocks.azureedge.net/starrocks/4.0.7/StarRocks-4.0.7.tar.gz
-tar -xzf StarRocks-4.0.7.tar.gz
-cd StarRocks-4.0.7
+url: https://www.starrocks.io/download/community/index.html
+
+tar -xzf StarRocks-<versiion>.tar.gz
+cd StarRocks-<version>
 
 # Start FE (Frontend)
 ./fe/bin/start_fe.sh --daemon
@@ -273,6 +274,40 @@ Main implemented API interfaces include:
 - **Multipart Operations**: Create multipart upload, upload part, complete multipart upload, abort multipart upload, list parts, list multipart uploads
 - **Versioning Operations**: Get bucket versioning status, set bucket versioning status
 - **Object Lock Operations**: Get bucket object lock configuration, get object retention configuration
+
+### Public URI Reading
+
+StoreFS supports public read access for objects in buckets marked as public. When a bucket is set to public, objects can be accessed directly via HTTP GET requests without authentication.
+
+#### Enabling Public Access
+
+A bucket can be marked as public during creation or updated later through:
+- Admin API: Set `isPublic` field to `true` in bucket create/update requests
+- Management Console: Toggle the "Public" switch in bucket settings
+
+#### Public URI Formats
+
+Objects in public buckets can be accessed using either path-style or virtual-hosted-style URIs:
+
+**Path-style**:
+```
+http://<s3-host>:<s3-port>/<bucket-name>/<object-key>
+```
+Example: `http://127.0.0.1:8901/my-bucket/documents/report.pdf`
+
+**Virtual-hosted-style**:
+```
+http://<bucket-name>.<s3-host>:<s3-port>/<object-key>
+```
+Example: `http://my-bucket.127.0.0.1:8901/documents/report.pdf`
+
+#### How It Works
+
+When StoreFS receives a GET request for an object:
+1. If the bucket is public, it serves the object without requiring authentication
+2. If the bucket is not public, it falls back to normal authentication checks
+
+Public access only applies to GET requests for objects. All other operations (upload, delete, list, etc.) still require proper authentication and authorization.
 
 ## Admin API
 

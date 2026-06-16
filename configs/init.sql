@@ -63,6 +63,7 @@ CREATE TABLE IF NOT EXISTS buckets
     is_locked      BOOLEAN      NOT NULL DEFAULT '0' COMMENT 'object lock on/off',
     lock_mode      VARCHAR(128) NOT NULL DEFAULT 'COMPLIANCE' COMMENT 'object lock mode: COMPLIANCE/GOVERNANCE',
     retention      BIGINT       NOT NULL DEFAULT '30' COMMENT 'retention days',
+    is_public      BOOLEAN      NOT NULL DEFAULT '0' COMMENT 'public bucket flag',
     last_update_at DATETIME              DEFAULT CURRENT_TIMESTAMP COMMENT 'last update time',
     created_at     DATETIME              DEFAULT CURRENT_TIMESTAMP COMMENT 'create time'
 ) PRIMARY KEY (id)
@@ -227,6 +228,6 @@ VALUES (1,
         'admin-ak',
         'admin-sk',
         'super_admin',
-        1,
+        0,
         '1',
         '0');

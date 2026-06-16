@@ -110,9 +110,10 @@ StoreFS使用StarRocks作为元数据存储，需要先部署StarRocks：
 
 ```bash
 # 下载并启动StarRocks（单节点部署）
-wget https://repos-starrocks.azureedge.net/starrocks/4.0.7/StarRocks-4.0.7.tar.gz
-tar -xzf StarRocks-4.0.7.tar.gz
-cd StarRocks-4.0.7
+url: https://www.starrocks.io/download/community/index.html
+
+tar -xzf StarRocks-<versiion>.tar.gz
+cd StarRocks-<version>
 
 # 启动FE（Frontend）
 ./fe/bin/start_fe.sh --daemon
@@ -272,6 +273,40 @@ StoreFS实现了S3 API的核心功能，兼容AWS S3的客户端和工具。您�
 - **分块操作**：创建分块上传、上传分块、完成分块上传、取消分块上传、列出分块、列出分块上传
 - **版本控制操作**：获取桶版本控制状态、设置桶版本控制状态
 - **对象锁定操作**：获取桶对象锁定配置、获取对象保留配置
+
+### 公共URI读取
+
+StoreFS支持对标记为公开的桶中的对象进行公开读取访问。当桶设置为公开时，可以通过HTTP GET请求直接访问对象，无需身份验证。
+
+#### 启用公开访问
+
+可以在创建桶或稍后更新时将桶标记为公开：
+- 管理API：在桶创建/更新请求中将`isPublic`字段设置为`true`
+- 管理控制台：在桶设置中切换"公开"开关
+
+#### 公共URI格式
+
+可以使用路径样式或虚拟主机样式URI访问公共桶中的对象：
+
+**路径样式**：
+```
+http://<s3主机>:<s3端口>/<桶名称>/<对象键>
+```
+示例：`http://127.0.0.1:8901/my-bucket/documents/report.pdf`
+
+**虚拟主机样式**：
+```
+http://<桶名称>.<s3主机>:<s3端口>/<对象键>
+```
+示例：`http://my-bucket.127.0.0.1:8901/documents/report.pdf`
+
+#### 工作原理
+
+当StoreFS接收到对象的GET请求时：
+1. 如果桶是公开的，则无需身份验证直接提供对象
+2. 如果桶不是公开的，则回退到正常的身份验证检查
+
+公开访问仅适用于对象的GET请求。所有其他操作（上传、删除、列出等）仍需要适当的身份验证和授权。
 
 ## Admin API
 
