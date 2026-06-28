@@ -34,8 +34,9 @@ This project uses Claude Code to automatically generate all codes and documentat
 - **Load Balancing**: Requests are automatically distributed to available nodes
 - **Web Management Console**: Provides an intuitive web interface to manage users, policies, buckets, and objects
 - **Multi-Language Support**: Management console supports Chinese and English
-- **Object Versioning**: Supports bucket-level versioning, keeps historical versions of objects, and prevents accidental deletion or overwriting
-- **Object Locking**: Supports WORM (Write Once, Read Many) model with both Governance and Compliance lock modes
+- **Security**: Supports object versioning (keeps historical versions and prevents accidental deletion), object locking (WORM model with Governance and Compliance modes), bucket-level AES-256-CTR encryption, and SSE-C (client-provided encryption keys) for data protection.
+- **Gzip Compression**: PutObject and Multipart Upload support gzip-compressed request bodies via Content-Encoding header.
+- **s3file CLI**: Interactive S3FS mode for browsing objects like a local file system, with Ctrl+C cancellation support.
 
 ### Core Concepts
 
@@ -55,6 +56,8 @@ This project uses Claude Code to automatically generate all codes and documentat
   - **Governance Mode**: Users with special permissions can overwrite or delete locked objects
   - **Compliance Mode**: No user can overwrite or delete locked objects until the retention period expires
   - Supports default retention policies automatically applied to newly uploaded objects
+
+- **Encryption**: Bucket-level AES-256-CTR encryption (default: ON). Every object uploaded to an encrypted bucket is automatically encrypted with a unique AES-256 key generated per object. Encryption can be enabled or disabled at bucket creation or update time via the management console or admin API.
 
 ### Cluster Architecture
 
@@ -233,8 +236,8 @@ Visit `http://localhost:7946/console` with the default administrator account:
 |----------------|-------------|---------------------|
 | User Management | Create/edit/delete users, manage access keys | [Login](docs/pics/login.jpg), [UserList](docs/pics/user.jpg), [GroupList](docs/pics/grouplist.jpg) |
 | Policy Management | Create/edit/delete policies, configure permission rules | [PolicyList](docs/pics/policy.jpg) |
-| Bucket Management | Create/edit/delete buckets, configure access policies | [BucketList](docs/pics/bucket.jpg) |
-| | Create/edit/delete buckets | [CreateVersionBucket](docs/pics/versionBucket.jpg) |
+| Bucket Management | Create/edit/delete buckets, configure access policies, toggle encryption on/off | [BucketList](docs/pics/bucket.jpg) |
+| | | [CreateVersionBucket](docs/pics/versionBucket.jpg) |
 | Object Management | Upload/download/delete objects, preview file contents | [ObjectList](docs/pics/object.jpg), [ObjectInfo](docs/pics/objectinfo.jpg) |
 | Object Versioning Management | Upload/download/delete objects, preview file contents | [ObjectVersionList](docs/pics/versionObjectList.jpg), [VersionList](docs/pics/versionList.jpg) |
 | Multipart Management | Complete/abort | [MultipartList](docs/pics/multipart.jpg), [MultipartInfo](docs/pics/partdetail.jpg), [MultipartFragmentInfo](docs/pics/partfragment.jpg) |

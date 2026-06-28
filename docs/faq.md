@@ -136,9 +136,43 @@ StoreFS does not currently provide direct audit logs, but you can implement it t
 3. Update affected application configurations
 4. Audit the system to find abnormal activities
 
-### 6. Other Questions
+### 6. Resource Naming Rules
 
-#### 6.1 Why can't uploaded files be downloaded?
+StoreFS enforces strict validation on resource names throughout the system (both backend API and management console).
+
+#### 6.1 Bucket Name Rules
+- Length: 3–63 characters
+- Must be lowercase letters, numbers, and hyphens (`-`) only
+- Must start and end with a letter or number
+- Cannot be formatted as an IP address (e.g., `192.168.1.1`)
+- Cannot have consecutive hyphens
+- Reserved prefixes `xn--` and `sthree-` are not allowed
+
+#### 6.2 Object Key Rules
+- Length: 1–1024 bytes (not characters)
+- Must be valid UTF-8
+- No control characters (C0/C1 control codes) allowed
+- Null characters (`0x00`) are not allowed
+
+#### 6.3 Policy Name Rules
+- Length: 1–128 characters
+- Allowed characters: letters (`a-zA-Z`), numbers (`0-9`), and `+=,.@_-`
+- Case-sensitive (keeps original case)
+
+#### 6.4 Username Rules
+- Length: 1–63 characters
+- Allowed characters: lowercase letters, numbers, dots (`.`), underscores (`_`), and hyphens (`-`)
+- Must start with a letter or number
+- Cannot have consecutive dots (`..`)
+- Cannot end with a hyphen or dot
+- Reserved names not allowed: `admin`, `root`, `system`, `guest`
+
+#### 6.5 Group Name Rules
+- Same rules as username (see section 6.4)
+
+### 7. Other Questions
+
+#### 7.1 Why can't uploaded files be downloaded?
 
 Possible reasons:
 1. The file was not completely uploaded
@@ -146,14 +180,14 @@ Possible reasons:
 3. Network connection issues
 4. Permission configuration errors
 
-#### 6.2 How to view system logs?
+#### 7.2 How to view system logs?
 
 StoreFS logs are output to standard output by default and can be viewed through the following methods:
 1. Redirect to a file when starting: `./storefs -config config.yaml > storefs.log 2>&1`
 2. Use system log services (such as systemd)
 3. Use Docker log functionality: `docker logs storefs-node1`
 
-### 7. Technical Support
+### 8. Technical Support
 
 If you encounter problems not solved in this FAQ, please:
 

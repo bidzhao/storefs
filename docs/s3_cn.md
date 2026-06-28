@@ -304,6 +304,19 @@ Authorization: AWS4-HMAC-SHA256 Credential=<AK>/20230101/us-east-1/s3/aws4_reque
 [object data]
 ```
 
+**可选：Gzip 压缩传输**：
+PutObject 支持 gzip 压缩的请求体。设置 `Content-Encoding: gzip` 请求头后，服务端会自动解压数据再存储：
+```http
+PUT /mybucket/photos/2023/01.jpg HTTP/1.1
+Host: 127.0.0.1:8901
+Content-Encoding: gzip
+Content-Length: 512
+Content-Type: image/jpeg
+Authorization: AWS4-HMAC-SHA256 Credential=<AK>/20230101/us-east-1/s3/aws4_request, SignedHeaders=..., Signature=...
+
+[gzip 压缩的对象数据]
+```
+
 **响应**：
 ```http
 HTTP/1.1 200 OK
@@ -401,6 +414,18 @@ Content-Length: 5242880
 Authorization: AWS4-HMAC-SHA256 Credential=<AK>/20230101/us-east-1/s3/aws4_request, SignedHeaders=..., Signature=...
 
 [part data]
+```
+
+**可选：Gzip 压缩传输**：
+UploadPart 同样支持 gzip 压缩的分块数据。设置 `Content-Encoding: gzip` 请求头：
+```http
+PUT /mybucket/largefile.zip?partNumber=1&uploadId=abc123def456 HTTP/1.1
+Host: 127.0.0.1:8901
+Content-Encoding: gzip
+Content-Length: 2621440
+Authorization: AWS4-HMAC-SHA256 Credential=<AK>/20230101/us-east-1/s3/aws4_request, SignedHeaders=..., Signature=...
+
+[gzip 压缩的分块数据]
 ```
 
 **响应**：

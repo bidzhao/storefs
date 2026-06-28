@@ -33,8 +33,9 @@ StoreFS是一个基于Go语言实现的分布式S3兼容存储系统，采用gos
 - **负载均衡**：请求会自动分发到可用节点
 - **Web管理控制台**：提供直观的Web界面管理用户、策略、桶和对象
 - **多语言支持**：管理控制台支持中文和英文
-- **对象版本控制**：支持桶版本控制，保留对象历史版本，防止意外删除
-- **对象锁定**：支持WORM（Write Once, Read Many）模型，提供治理和合规两种锁定模式
+- **安全特性**：支持对象版本控制（保留历史版本，防止意外删除）、对象锁定（WORM模型，提供治理和合规两种模式）、桶级别 AES-256-CTR 加密以及 SSE-C（客户端提供加密密钥），全方位保护数据安全。
+- **Gzip压缩传输**：PutObject 和 Multipart Upload 支持通过 Content-Encoding 头传输 gzip 压缩的请求体。
+- **s3file CLI**：交互式 S3FS 模式，像操作本地文件系统一样浏览对象，支持 Ctrl+C 取消操作。
 
 ### 核心概念
 
@@ -54,6 +55,8 @@ StoreFS是一个基于Go语言实现的分布式S3兼容存储系统，采用gos
   - **Governance Mode（治理模式）**：特定权限用户可以覆盖或删除锁定对象
   - **Compliance Mode（合规模式）**：任何用户都不能覆盖或删除锁定对象，直到保留期结束
   - 支持默认保留策略，自动应用于新上传的对象
+
+- **Encryption（加密）**：桶级别的 AES-256-CTR 加密（默认：开启）。上传到加密桶的每个对象都会自动生成唯一的 AES-256 密钥并加密存储。可以通过管理控制台或管理 API 在创建或编辑桶时开启或关闭加密。
 
 ### 集群架构
 
@@ -232,8 +235,8 @@ StoreFS提供了一个基于Vue.js的Web管理控制台，位于`web`目录下�
 |------|-------------------|----------|
 | 用户管理 | 创建/编辑/删除用户，管理访问密钥 | [登录](docs/pics/login.jpg), [用户列表](docs/pics/user.jpg), [组列表](docs/pics/grouplist.jpg)|
 | 策略管理 | 创建/编辑/删除策略，配置权限规则 | [策略列表](docs/pics/policy.jpg) |
-| 桶管理  | 创建/编辑/删除桶，配置访问策略  | [桶列表](docs/pics/bucket.jpg) |
-| | 创建具有对象版本管理的桶 | [添加桶（版本）](docs/pics/versionBucket.jpg) |
+| 桶管理  | 创建/编辑/删除桶，配置访问策略，开启/关闭加密 | [桶列表](docs/pics/bucket.jpg) |
+| | | [添加桶（版本）](docs/pics/versionBucket.jpg) |
 | 对象管理 | 上传/下载/删除对象，预览文件内容 | [对象列表](docs/pics/object.jpg), [对象信息](docs/pics/objectinfo.jpg) |
 | 版本对象管理 | 上传/下载/删除对象，预览文件内容 | [对象（版本）列表](docs/pics/versionObjectList.jpg), [版本列表](docs/pics/versionList.jpg) |
 | 分块管理 | 完成/取消 | [分块列表](docs/pics/multipart.jpg), [分块信息](docs/pics/partdetail.jpg), [分块分片信息](docs/pics/partfragment.jpg) |
