@@ -1,0 +1,23 @@
+global:
+  scrape_interval: 15s
+  evaluation_interval: 15s
+
+# ── Alertmanager configuration ────────────────────────────────────────────
+alerting:
+  alertmanagers:
+    - static_configs:
+        - targets: ["alertmanager:9093"]
+
+# ── Alert rules ───────────────────────────────────────────────────────────
+rule_files:
+  - "alerts/storefs_alerts.yml"
+
+scrape_configs:
+  - job_name: "storefs-metrics"
+    static_configs:
+      - targets:
+          - "host.docker.internal:7946"
+          - "host.docker.internal:7947"
+          - "host.docker.internal:7948"
+        labels:
+          app: "storefs"

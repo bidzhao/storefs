@@ -1,0 +1,10 @@
+apiVersion: 1
+
+datasources:
+  - name: storefs
+    type: prometheus
+    access: proxy
+    uid: storefs
+    url: http://prometheus:9090
+    isDefault: true
+

@@ -13,6 +13,7 @@
 - [S3 API](#s3-api)
 - [Admin API](#admin-api)
 - [s3file CLI](#s3file-cli)
+- [监控](#监控)
 - [快速开始](#快速开始)
 - [技术支持](#技术支持)
 - [许可证](#许可证)
@@ -349,6 +350,22 @@ s3file 是一个用于与 S3 兼容存储服务交互的命令行工具，支持
 ### 文档
 
 详细文档请参考：[s3file CLI 文档](docs/s3file_cn.md)
+
+## 监控
+
+StoreFS 提供了基于 Prometheus + Grafana + Alertmanager 的完整监控与告警系统。
+
+### 主要功能
+
+- **指标采集**：每个 StoreFS 节点暴露 `/metrics` 端点，包含系统级指标（CPU、内存、磁盘、网络）、操作计数器（对象上传/下载、分块上传、分片操作）和 Go 运行时指标。
+- **热点桶检测**：基于滑动窗口算法（2 分钟窗口）实时跟踪热点桶 Top-K，覆盖上传、下载、UploadPart 和 CompleteMultipart 操作。
+- **预置 Grafana 仪表盘**：包含两个预配置仪表盘——单节点详细视图和集群汇总视图。
+- **告警规则**：预定义的 Prometheus 告警规则，涵盖节点宕机、磁盘使用率、CPU/内存阈值和 goroutine 数量。
+- **通知渠道**：Alertmanager 配置包含 Slack、Email 和 Webhook 通知模板（默认全部关闭，按需启用）。
+
+### 文档
+
+详细信息请参考：[监控指南](docs/metrics_cn.md)
 
 ## 快速开始
 

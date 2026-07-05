@@ -14,6 +14,7 @@
 - [S3 API](#s3-api)
 - [Admin API](#admin-api)
 - [s3file CLI](#s3file-cli)
+- [Monitoring](#monitoring)
 - [Quick Start](#quick-start)
 - [Technical Support](#technical-support)
 - [License](#license)
@@ -350,6 +351,22 @@ s3file is a command-line tool for interacting with S3-compatible storage service
 ### Documentation
 
 For detailed documentation, please refer to: [s3file CLI Documentation](docs/s3file.md)
+
+## Monitoring
+
+StoreFS provides a comprehensive monitoring and alerting system based on the Prometheus + Grafana + Alertmanager stack.
+
+### Key Features
+
+- **Metrics Collection**: Each StoreFS node exposes a `/metrics` endpoint with system-level metrics (CPU, memory, disk, network), operation counters (object upload/download, multipart, fragment), and Go runtime metrics.
+- **Hot Bucket Detection**: Real-time top-K hot bucket tracking using a sliding window algorithm (2-minute window), covering uploads, downloads, upload parts, and multipart completes.
+- **Pre-built Grafana Dashboards**: Two pre-configured dashboards are included — a single-node detailed view and a cluster-wide summary view.
+- **Alert Rules**: Pre-defined Prometheus alert rules for node down, disk usage, CPU/memory thresholds, and goroutine count.
+- **Notification Channels**: Alertmanager configuration with templates for Slack, Email, and Webhook notifications (all disabled by default — easy to enable).
+
+### Documentation
+
+For detailed information, please refer to: [Monitoring Guide](docs/metrics.md)
 
 ## Quick Start
 

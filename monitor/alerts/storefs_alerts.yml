@@ -1,0 +1,131 @@
+# =============================================================================
+# StoreFS Prometheus Alert Rules
+# =============================================================================
+# These rules are loaded by Prometheus and evaluated against the scraped
+# metrics. When a rule fires, it is forwarded to Alertmanager for routing
+# and notification delivery.
+# =============================================================================
+
+groups:
+  - name: storefs_node
+    interval: 15s
+    rules:
+      # ── Node Down ──────────────────────────────────────────────────────
+      - alert: StoreFSNodeDown
+        expr: up{job="storefs-metrics"} == 0
+        for: 1m
+        labels:
+          severity: critical
+        annotations:
+          summary: "Node {{ $labels.node }} is unreachable"
+          description: "Prometheus cannot scrape {{ $labels.node }} ({{ $labels.ip }}) for more than 1 minute."
+          value: "{{ $value }}"
+
+      # ── Node Restarted ─────────────────────────────────────────────────
+      - alert: StoreFSNodeRestarted
+        expr: storefs_node_uptime_seconds < 60
+        for: 1m
+        labels:
+          severity: critical
+        annotations:
+          summary: "Node {{ $labels.node }} has just restarted"
+          description: "The process on {{ $labels.node }} started less than 60 seconds ago. Node uptime: {{ $value }}s."
+          value: "{{ $value }}s"
+
+  - name: storefs_disk
+    interval: 15s
+    rules:
+      # ── Disk Usage Warning ─────────────────────────────────────────────
+      - alert: StoreFSDiskUsageWarning
+        expr: storefs_disk_usage_percent > 75
+        for: 2m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Disk usage > 75% on {{ $labels.node }}"
+          description: "Disk path {{ $labels.path }} on {{ $labels.node }} is at {{ $value }}% capacity."
+          value: "{{ $value }}%"
+
+      # ── Disk Usage Critical ────────────────────────────────────────────
+      - alert: StoreFSDiskUsageCritical
+        expr: storefs_disk_usage_percent > 90
+        for: 1m
+        labels:
+          severity: critical
+        annotations:
+          summary: "Disk usage > 90% on {{ $labels.node }}"
+          description: "Disk path {{ $labels.path }} on {{ $labels.node }} is critically full at {{ $value }}%."
+          value: "{{ $value }}%"
+
+  - name: storefs_cpu
+    interval: 15s
+    rules:
+      # ── High CPU Usage ─────────────────────────────────────────────────
+      - alert: StoreFSHighCPUUsage
+        expr: storefs_cpu_usage_percent > 80
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "CPU > 80% on {{ $labels.node }}"
+          description: "CPU usage on {{ $labels.node }} ({{ $labels.ip }}) is at {{ $value }}% for > 5 minutes."
+          value: "{{ $value }}%"
+
+      - alert: StoreFSHighCPUUsageCritical
+        expr: storefs_cpu_usage_percent > 90
+        for: 3m
+        labels:
+          severity: critical
+        annotations:
+          summary: "CPU > 90% on {{ $labels.node }}"
+          description: "CPU usage on {{ $labels.node }} ({{ $labels.ip }}) is critically high at {{ $value }}% for > 3 minutes."
+          value: "{{ $value }}%"
+
+  - name: storefs_memory
+    interval: 15s
+    rules:
+      # ── High Memory Usage ──────────────────────────────────────────────
+      - alert: StoreFSHighMemoryUsage
+        expr: storefs_memory_usage_percent > 85
+        for: 2m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Memory > 85% on {{ $labels.node }}"
+          description: "Memory usage on {{ $labels.node }} ({{ $labels.ip }}) is at {{ $value }}%."
+          value: "{{ $value }}%"
+
+      - alert: StoreFSHighMemoryUsageCritical
+        expr: storefs_memory_usage_percent > 93
+        for: 1m
+        labels:
+          severity: critical
+        annotations:
+          summary: "Memory > 93% on {{ $labels.node }}"
+          description: "Memory usage on {{ $labels.node }} ({{ $labels.ip }}) is critically high at {{ $value }}%."
+          value: "{{ $value }}%"
+
+  - name: storefs_go_runtime
+    interval: 15s
+    rules:
+      # ── Goroutine Warning ─────────────────────────────────────────────
+      - alert: StoreFSGoroutineWarning
+        expr: go_goroutines > 20000
+        for: 2m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Goroutine warning on {{ $labels.node }}"
+          description: "Goroutines on {{ $labels.node }} exceeded 20000: current value {{ $value }}."
+          value: "{{ $value }}"
+
+      # ── Goroutine Critical ────────────────────────────────────────────
+      - alert: StoreFSGoroutineCritical
+        expr: go_goroutines > 50000
+        for: 1m
+        labels:
+          severity: critical
+        annotations:
+          summary: "Goroutine critical on {{ $labels.node }}"
+          description: "Goroutines on {{ $labels.node }} exceeded 50000: current value {{ $value }}."
+          value: "{{ $value }}"

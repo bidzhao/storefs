@@ -1,0 +1,110 @@
+# =============================================================================
+# StoreFS Alertmanager Configuration
+# =============================================================================
+# This file defines notification receivers for StoreFS alerts.
+#
+# ── HOW TO ENABLE A NOTIFICATION CHANNEL ──
+#   1. Uncomment the receiver configuration block you want to use.
+#   2. Fill in your actual credentials / URLs.
+#   3. Update route.routes[].receiver to match the receiver name.
+#   4. Run: docker-compose restart alertmanager
+#
+# All notification receivers are DISABLED by default.
+# Alerts are still logged and visible in the Alertmanager UI at port 9093.
+#
+# =============================================================================
+
+global:
+  # How long to wait before resolving an alert
+  resolve_timeout: 5m
+
+  # ── SMTP (Email) defaults ──
+  # These are only used when the email receiver is enabled.
+  smtp_smarthost:   "smtp.example.com:587"
+  smtp_from:        "alert@storefs.local"
+  smtp_auth_username: ""
+  smtp_auth_password: ""
+  smtp_require_tls: true
+
+# ── Root route ──
+# All alerts land here first, then are matched against sub-routes.
+route:
+  group_by: ["alertname", "node"]
+  group_wait:       10s
+  group_interval:   5m
+  repeat_interval:  4h
+  receiver: "default-noop"
+  routes: []  # Uncomment a receiver below and add its route here
+
+# ── Receivers ──────────────────────────────────────────────────────────────
+receivers:
+  # ── No-op receiver (default) ──
+  # Silently swallows all alerts. This is the active default so nothing
+  # happens until the user explicitly enables a channel below.
+  - name: "default-noop"
+
+  # ═══════════════════════════════════════════════════════════════════════════
+  # SLACK NOTIFICATIONS
+  # ═══════════════════════════════════════════════════════════════════════════
+  #
+  # To enable:
+  #   1. Create a Slack Webhook URL via:
+  #      https://api.slack.com/messaging/webhooks
+  #   2. Uncomment the receiver below and set api_url.
+  #   3. Change route.routes[0].receiver to "slack-notifications".
+  #
+  # ═══════════════════════════════════════════════════════════════════════════
+  #
+  # - name: "slack-notifications"
+  #   slack_configs:
+  #     - api_url: "https://hooks.slack.com/services/T00000000/B00000000/XXXXXXXXXXXXXXXXXXXXXXXX"
+  #       channel: "#storefs-alerts"
+  #       send_resolved: true
+  #       title:   '{{ template "slack.title" . }}'
+  #       text:    '{{ template "slack.text" . }}'
+  #       footer:  "StoreFS Alertmanager"
+
+  # ═══════════════════════════════════════════════════════════════════════════
+  # EMAIL NOTIFICATIONS
+  # ═══════════════════════════════════════════════════════════════════════════
+  #
+  # To enable:
+  #   1. Update global.smtp_* settings above with your SMTP server.
+  #   2. Uncomment the receiver below and set to: addresses.
+  #   3. Change route.routes[0].receiver to "email-notifications".
+  #
+  # ═══════════════════════════════════════════════════════════════════════════
+  #
+  # - name: "email-notifications"
+  #   email_configs:
+  #     - to: "ops@example.com"
+  #       send_resolved: true
+  #       headers:
+  #         subject: '{{ template "email.subject" . }}'
+
+  # ═══════════════════════════════════════════════════════════════════════════
+  # WEBHOOK NOTIFICATIONS
+  # ═══════════════════════════════════════════════════════════════════════════
+  #
+  # To enable:
+  #   1. Uncomment the receiver below and set url to your webhook endpoint.
+  #   2. Change route.routes[0].receiver to "webhook-notifications".
+  #
+  # The webhook POSTs a JSON payload. Your endpoint should accept:
+  #   POST /some/path
+  #   Content-Type: application/json
+  #
+  # ═══════════════════════════════════════════════════════════════════════════
+  #
+  # - name: "webhook-notifications"
+  #   webhook_configs:
+  #     - url: "http://your-webhook-host:8080/alert"
+  #       send_resolved: true
+  #       http_config:
+  #         timeout: 10s
+
+# ═════════════════════════════════════════════════════════════════════════════
+# NOTIFICATION TEMPLATES
+# ═════════════════════════════════════════════════════════════════════════════
+templates:
+  - "/etc/alertmanager/*.tmpl"

@@ -1,0 +1,72 @@
+{{- /* =========================================================================
+  StoreFS Alertmanager Notification Templates
+
+  These templates are shared across all notification receivers.
+  ========================================================================= */ -}}
+
+{{- /* ── Slack title ── */ -}}
+{{- define "slack.title" -}}
+  [{{ .Status | toUpper }}] {{ .GroupLabels.alertname }}
+{{- end -}}
+
+{{- /* ── Slack message body ── */ -}}
+{{- define "slack.text" -}}
+  *Alert:* {{ .GroupLabels.alertname }}
+  *Node:*  {{ .GroupLabels.node }}
+  *Description:*
+  {{ range .Alerts }}
+    • *Severity:* {{ .Labels.severity }}
+      {{ .Annotations.description }}
+      (value: {{ .Annotations.value }})
+      {{ if .Annotations.summary }}{{ .Annotations.summary }}{{ end }}
+  {{ end }}
+  {{ if .Alerts.Firing -}}
+    *Firing:* {{ .Alerts.Firing | len }} alert(s)
+  {{- end }}
+  {{ if .Alerts.Resolved -}}
+    *Resolved:* {{ .Alerts.Resolved | len }} alert(s)
+  {{- end }}
+{{- end -}}
+
+{{- /* ── Email subject ── */ -}}
+{{- define "email.subject" -}}
+  [{{ .Status | toUpper }}] {{ .GroupLabels.alertname }} on {{ .GroupLabels.node }}
+{{- end -}}
+
+{{- /* ── Email body ── */ -}}
+{{- define "email.body.html" -}}
+<html>
+<body>
+  <h2>{{ .GroupLabels.alertname }}</h2>
+  <table border="1" cellpadding="8" cellspacing="0" style="border-collapse:collapse;">
+    <tr><th>Node</th><td>{{ .GroupLabels.node }}</td></tr>
+    <tr><th>Status</th><td>{{ .Status }}</td></tr>
+    <tr><th>Severity</th><td>{{ .CommonLabels.severity }}</td></tr>
+  </table>
+
+  <h3>Alerts</h3>
+  <table border="1" cellpadding="8" cellspacing="0" style="border-collapse:collapse;">
+    <tr>
+      <th>Alert</th>
+      <th>Description</th>
+      <th>Value</th>
+      <th>Started</th>
+    </tr>
+    {{ range .Alerts }}
+    <tr>
+      <td>{{ .Labels.alertname }}</td>
+      <td>{{ .Annotations.description }}</td>
+      <td>{{ .Annotations.value }}</td>
+      <td>{{ .StartsAt.Format "2006-01-02 15:04:05" }}</td>
+    </tr>
+    {{ end }}
+  </table>
+
+  <hr>
+  <p style="color:#888;">StoreFS Alertmanager</p>
+</body>
+</html>
+{{- end -}}
+
+{{- /* ── Webhook payload (default Prometheus format, no override needed) ── */ -}}
+{{- /* The default Alertmanager webhook JSON is sufficient. */ -}}
