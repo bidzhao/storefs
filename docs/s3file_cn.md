@@ -311,7 +311,7 @@ connect --interactive
 ```bash
 $ s3file
 ╔══════════════════════════════════════════════════════════════════════════╗
-║                        S3 File System CLI v0.3.7                         ║
+║                        S3 File System CLI v0.3.8                         ║
 ║      Supports StoreFS, MinIO, AWS S3, and all S3-compatible services     ║
 ╚══════════════════════════════════════════════════════════════════════════╝
 Type 'help' for available commands

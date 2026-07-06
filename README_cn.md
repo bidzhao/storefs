@@ -14,6 +14,7 @@
 - [Admin API](#admin-api)
 - [s3file CLI](#s3file-cli)
 - [监控](#监控)
+- [MCP for AI Agent](#mcp-for-ai-agent)
 - [快速开始](#快速开始)
 - [技术支持](#技术支持)
 - [许可证](#许可证)
@@ -357,7 +358,7 @@ StoreFS 提供了基于 Prometheus + Grafana + Alertmanager 的完整监控与�
 
 ### 主要功能
 
-- **指标采集**：每个 StoreFS 节点暴露 `/metrics` 端点，包含系统级指标（CPU、内存、磁盘、网络）、操作计数器（对象上传/下载、分块上传、分片操作）和 Go 运行时指标。
+- **指标采集**：每个 StoreFS 节点暴露 `/metrics` 端点，包含系统级指标（CPU、内存、磁盘、网络）、操作计数器（对象上传/下载、分块上传、碎片操作）和 Go 运行时指标。
 - **热点桶检测**：基于滑动窗口算法（2 分钟窗口）实时跟踪热点桶 Top-K，覆盖上传、下载、UploadPart 和 CompleteMultipart 操作。
 - **预置 Grafana 仪表盘**：包含两个预配置仪表盘——单节点详细视图和集群汇总视图。
 - **告警规则**：预定义的 Prometheus 告警规则，涵盖节点宕机、磁盘使用率、CPU/内存阈值和 goroutine 数量。
@@ -366,6 +367,27 @@ StoreFS 提供了基于 Prometheus + Grafana + Alertmanager 的完整监控与�
 ### 文档
 
 详细信息请参考：[监控指南](docs/metrics_cn.md)
+
+## MCP for AI Agent
+
+StoreFS 提供了 [MCP（模型上下文协议）](https://modelcontextprotocol.io) 服务器，让 AI 助手（特别是 **Claude Code**）能够通过自然语言管理集群。您无需记忆 API 端点和请求格式，只需描述您的需求即可。
+
+### 主要功能
+
+- **自然语言管理**：通过对话管理用户、分组、桶、策略和对象
+- **40+ 工具**：六大类工具覆盖集群管理、用户管理、存储策略、桶操作、对象管理和 S3 数据操作
+- **自动语言检测**：根据输入自动在英文和中文间切换响应语言
+- **安全认证**：管理员操作使用 Bearer token，S3 数据操作使用 AWS Signature V4
+- **文件操作**：通过自然语言指令直接上传、下载和复制文件
+
+### 前提条件
+
+- **Node.js >= 18**
+- **StoreFS v0.3.7 及以上版本**
+
+### 文档
+
+详细信息请参考：[MCP 服务器指南](docs/mcp_cn.md)
 
 ## 快速开始
 

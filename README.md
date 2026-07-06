@@ -15,6 +15,7 @@
 - [Admin API](#admin-api)
 - [s3file CLI](#s3file-cli)
 - [Monitoring](#monitoring)
+- [MCP for AI Agent](#mcp-for-ai-agent)
 - [Quick Start](#quick-start)
 - [Technical Support](#technical-support)
 - [License](#license)
@@ -367,6 +368,27 @@ StoreFS provides a comprehensive monitoring and alerting system based on the Pro
 ### Documentation
 
 For detailed information, please refer to: [Monitoring Guide](docs/metrics.md)
+
+## MCP for AI Agent
+
+StoreFS provides an [MCP (Model Context Protocol)](https://modelcontextprotocol.io) server that enables AI assistants — primarily **Claude Code** — to manage the cluster through natural language. Instead of remembering API endpoints and request formats, you can simply describe what you want to do.
+
+### Key Features
+
+- **Natural Language Management**: Manage users, groups, buckets, policies, and objects by chatting with the AI
+- **40+ Tools**: Six groups of tools covering cluster management, user administration, storage policies, bucket operations, object management, and S3 data operations
+- **Automatic Language Detection**: Responses auto-switch between English and Chinese based on your input
+- **Secure Authentication**: Bearer token for admin operations, AWS Signature V4 for S3 data operations
+- **File Operations**: Upload, download, and copy files directly through natural language commands
+
+### Prerequisites
+
+- **Node.js >= 18**
+- **StoreFS v0.3.7 or above**
+
+### Documentation
+
+For detailed information, please refer to: [MCP Server Guide](docs/mcp.md)
 
 ## Quick Start
 
