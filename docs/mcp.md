@@ -23,12 +23,14 @@ The **StoreFS MCP Server** implements the [Model Context Protocol (MCP)](https:/
 │                       │       │  - bucket & object mgmt      │
 │                       │       │  - multipart upload          │
 │                       │       │  - S3 data operations        │
+│                       │       │  - task management           │
 └───────────┬───────────┘       └──────────────────────────────┘
             │
             ├──────── HTTP ────────► Admin REST API (port 7946)
             │                        └─ /api/auth/*, /api/users/*
             │                          /api/buckets/*, /api/policies/*
             │                          /api/groups/*, /api/node/*
+            │                          /api/tasks/*
             │                          /metrics
             │
             └──────── HTTP ────────► S3 REST API (port 8901)
@@ -110,7 +112,7 @@ You should see a success message with your role and group information.
 
 ## Feature Overview
 
-The MCP server exposes **40+ tools** organized into six groups:
+The MCP server exposes **40+ tools** organized into eight groups:
 
 ### 1. System Tools
 
@@ -120,9 +122,11 @@ The MCP server exposes **40+ tools** organized into six groups:
 | `storefs_login` | Authenticate with username/password |
 | `storefs_logout` | Clear current authentication session |
 | `storefs_whoami` | Show currently logged-in user details |
-| `storefs_cluster_status` | List all nodes, their disks, and usage |
+| `storefs_cluster_status` | List all nodes, their disks, usage, and taint status |
 | `storefs_node_metrics` | Fetch Prometheus metrics (with optional filter) |
 | `storefs_change_password` | Change current user's password |
+| `storefs_list_node_status` | List all node taint statuses |
+| `storefs_update_node_status` | Update a node's taint status (super_admin only) |
 
 ### 2. User & Group Management Tools
 
@@ -203,6 +207,24 @@ Bucket-level features you can configure:
 
 > **Note:** S3 data operations use the current user's AccessKey/SecretKey, which are automatically retrieved after login. If the user has no keys, use `storefs_rotate_access_keys` to generate them.
 
+### 7. Task Management Tools
+
+| Tool | Description |
+|------|-------------|
+| `storefs_list_task_types` | List all available task types |
+| `storefs_list_tasks` | List all tasks with pagination and status filter |
+| `storefs_get_task` | Get task details |
+| `storefs_create_task` | Create a task (generic) |
+| `storefs_create_repair_task` | Create a repair task — repair damaged/missing fragments on a node (super_admin only) |
+| `storefs_create_replacedisk_task` | Create a replace-disk task — migrate data from old disk to new disk (super_admin only) |
+| `storefs_cancel_task` | Cancel a running task |
+| `storefs_delete_task` | Delete a task (running tasks are cancelled first) |
+| `storefs_cleanup_tasks` | Clean up old completed/failed tasks (super_admin only) |
+
+Tasks are asynchronous background operations running on a specific node. Use `storefs_list_tasks` to monitor progress and `storefs_get_task` for details.
+
+For detailed documentation on the task system, repair, and replace-disk operations, see the [Task System Documentation](task.md).
+
 ---
 
 ## Suggested Prompts
@@ -215,6 +237,9 @@ Below are task-oriented prompts organized by scenario. You can use them directly
 Check the cluster health
 Show me the cluster status — all nodes and disk usage
 Fetch node metrics, filter by "cpu"
+List all node taint statuses
+Update node "node3" taint status to "taint"
+Restore node "node3" taint status to "active"
 ```
 
 ### User Administration
@@ -292,6 +317,10 @@ Check which nodes are offline
 Find incomplete multipart uploads that should be cleaned up
 Show me buckets that are using the most disk space
 List all users in the "admin" group
+List all tasks and their statuses
+Get details for task 42
+Create a replacedisk task for node "node1", old disk "/data/disk1", new disk "/data/disk2"
+Cancel running task 15
 ```
 
 ---

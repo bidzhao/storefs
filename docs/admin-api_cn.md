@@ -807,15 +807,3 @@ const usersData = await usersResponse.json();
 console.log(usersData.users);
 ```
 
-## 未实现的功能
-
-目前以下 Admin API 功能尚未实现：
-
-- 桶策略和 ACL 管理
-- 对象版本控制
-- 数据复制和迁移
-- 存储使用统计
-- 审计日志
-- 节点配置更新
-
-这些功能将在未来的版本中逐步实现。

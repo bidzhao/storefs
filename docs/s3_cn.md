@@ -687,16 +687,3 @@ aws s3 --endpoint-url http://127.0.0.1:8901 --profile storefs cp localfile.txt s
 - **MinIO Client**：与 S3 兼容的客户端
 - **各种语言的 SDK**：如 boto3（Python）、AWS SDK for Java 等
 
-## 未实现的功能
-
-目前以下 S3 功能尚未实现：
-
-- 桶ACLs
-- 服务器端加密
-- 生命周期管理
-- 事件通知
-- 放置桶对象锁定配置（PutObjectLockConfiguration）
-- 放置对象保留配置（PutObjectRetention）
-- 对象法律持有（Object Legal Hold）
-
-这些功能将在未来的版本中逐步实现。

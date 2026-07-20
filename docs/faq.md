@@ -83,12 +83,81 @@ StoreFS supports the following backup methods:
 2. Restore data files: Copy backed up files to the corresponding location
 3. Start the node: `./storefs -config config.yaml`
 
-#### 3.3 How to handle disk failures?
+#### 3.3 How to replace a disk?
 
-1. Replace the failed disk
-2. Create the same directory structure on the new disk
-3. Reconfigure the node: Update the disk path in `config.yaml`
-4. Restart the node
+StoreFS supports online disk replacement through the task system. This allows data migration from the old disk to the new disk without service interruption.
+
+Steps:
+
+1. **Set the node to taint status** — mark the node as maintenance mode so no new data is written to it. You can do this via any of:
+   - **Web Admin Console**: Node Management → set the target node's status to "taint"
+   - **Admin API**: `curl -X PUT http://<node-ip>:7946/api/node-status/<node-name> -H "Authorization: Bearer <token>" -d '{"status":"taint"}'`
+   - **MCP**: `storefs_update_node_status(nodeName="<node-name>", status="taint")`
+
+2. **Run a ReplaceDisk task** on the taint-marked node. This migrates data from the old disk to the new disk:
+   - **Web Admin Console**: Tasks → Create Task → select "Replace Disk" type, choose the target node, fill in the old and new disk paths
+   - **Admin API**: `curl -X POST http://<node-ip>:7946/api/tasks -H "Authorization: Bearer <token>" -H "Content-Type: application/json" -d '{"type":"replacedisk","params":{"oldDiskPath":"/data/old-disk","newDiskPath":"/data/new-disk","nodeName":"<node-name>"}}'`
+   - **MCP**: `storefs_create_task(type="replacedisk", params={oldDiskPath: "/data/old-disk", newDiskPath: "/data/new-disk", nodeName: "<node-name>"})`
+
+   You can monitor the task progress via:
+   - **Web Admin Console**: Tasks → Active Tasks (progress bar updates in real-time)
+   - **Admin API**: `curl http://<node-ip>:7946/api/tasks/<task-id> -H "Authorization: Bearer <token>"`
+   - **MCP**: `storefs_get_task(taskId=...)`
+
+3. **Remove the taint status** from the node after the task completes successfully:
+   - **Web Admin Console**: Node Management → set the node's status back to "active"
+   - **Admin API**: `curl -X PUT http://<node-ip>:7946/api/node-status/<node-name> -H "Authorization: Bearer <token>" -d '{"status":"active"}'`
+   - **MCP**: `storefs_update_node_status(nodeName="<node-name>", status="active")`
+
+> **Note**: The `replacedisk` task can also be created and monitored via the S3 console's Task Management interface. Only users with `super_admin` role can perform these operations.
+
+#### 3.4 When to run a Repair task (node/disk)?
+
+The Repair task reconstructs missing or inconsistent fragment metadata. You should run a Repair in the following scenarios:
+
+- **Node restart after an abnormal shutdown** — some fragments may not have been flushed properly, resulting in metadata inconsistency
+- **Disk replacement** — after a new disk is added, fragment references on the old disk may need to be updated
+- **During cluster recovery** — when metadata and actual data are out of sync, run Repair to scan and rebuild the fragment index
+- **Periodic health check** — running Repair proactively during low-load periods helps detect and fix fragment-level issues early
+
+Steps:
+
+1. **Set the node to taint status** (if repairing a specific node):
+   - **Web Admin Console**: Node Management → set the target node's status to "taint"
+   - **Admin API**: `curl -X PUT http://<node-ip>:7946/api/node-status/<node-name> -H "Authorization: Bearer <token>" -d '{"status":"taint"}'`
+
+2. **Run a Repair task** on the node:
+   - **Web Admin Console**: Tasks → Create Task → select "Repair Fragments" type, choose the target node, optionally specify a disk path to repair only that disk
+   - **Admin API**: `curl -X POST http://<node-ip>:7946/api/tasks -H "Authorization: Bearer <token>" -H "Content-Type: application/json" -d '{"type":"repair","params":{"node":"<node-name>","disk":"/data/disk1"}}'`
+   - **MCP**: `storefs_create_task(type="repair", params={node: "<node-name>", disk: "/data/disk1"})`
+
+   > The `disk` parameter is optional. If omitted, the task will repair all disks on the node.
+
+   You can monitor progress via:
+   - **Web Admin Console**: Tasks → Active Tasks
+   - **Admin API**: `curl http://<node-ip>:7946/api/tasks/<task-id> -H "Authorization: Bearer <token>"`
+   - **MCP**: `storefs_get_task(taskId=...)`
+
+3. **Remove the taint status** from the node after the task completes successfully:
+   - **Web Admin Console**: Node Management → set the node's status back to "active"
+   - **Admin API**: `curl -X PUT http://<node-ip>:7946/api/node-status/<node-name> -H "Authorization: Bearer <token>" -d '{"status":"active"}'`
+   - **MCP**: `storefs_update_node_status(nodeName="<node-name>", status="active")`
+
+> **Note**: A Repair task is read-only — it scans and fixes fragment metadata without moving data. It is safe to run on a live node, but setting the node to taint first is recommended to avoid new writes during the repair process.
+
+#### 3.5 When to run a ReplaceDisk task?
+
+The ReplaceDisk task migrates data from one disk to another on the same node. Unlike Repair, which only fixes metadata, ReplaceDisk physically moves data. You should run a ReplaceDisk in the following scenarios:
+
+- **Disk failure or degradation** — when a disk reports I/O errors, bad sectors, or is about to fail, migrate its data to a healthy disk
+- **Disk capacity upgrade** — when replacing a small-capacity disk with a larger one, migrate data to the new disk
+- **Disk performance upgrade** — when replacing an HDD with an SSD, migrate data to the faster disk
+- **Disk path change** — when the disk mount point or directory path changes, migrate data to the new path
+- **Disk decommissioning** — when a disk needs to be removed from the node, migrate its data to other disks first
+
+The operation steps are the same as described in [3.3 How to replace a disk?](#3-3-how-to-replace-a-disk).
+
+> **Note**: ReplaceDisk is a data-moving operation, not read-only. Ensure the target disk has sufficient capacity before starting the task. The node should be set to taint status before running ReplaceDisk to prevent new writes during migration.
 
 ### 4. Performance Optimization
 

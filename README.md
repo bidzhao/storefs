@@ -16,6 +16,7 @@
 - [s3file CLI](#s3file-cli)
 - [Monitoring](#monitoring)
 - [MCP for AI Agent](#mcp-for-ai-agent)
+- [Task System](#task-system)
 - [Quick Start](#quick-start)
 - [Technical Support](#technical-support)
 - [License](#license)
@@ -39,6 +40,8 @@ This project uses Claude Code to automatically generate all codes and documentat
 - **Security**: Supports object versioning (keeps historical versions and prevents accidental deletion), object locking (WORM model with Governance and Compliance modes), bucket-level AES-256-CTR encryption, and SSE-C (client-provided encryption keys) for data protection.
 - **Gzip Compression**: PutObject and Multipart Upload support gzip-compressed request bodies via Content-Encoding header.
 - **s3file CLI**: Interactive S3FS mode for browsing objects like a local file system, with Ctrl+C cancellation support.
+- **Task Management**: Background task system for long-running administrative operations such as repairing corrupted fragments and replacing failed disks, with progress tracking and cancel support.
+- **Node Taint**: Mark nodes as taint to prevent new data writes, or activate them back — useful for node maintenance, disk replacement, or troubleshooting scenarios.
 
 ### Core Concepts
 
@@ -60,6 +63,10 @@ This project uses Claude Code to automatically generate all codes and documentat
   - Supports default retention policies automatically applied to newly uploaded objects
 
 - **Encryption**: Bucket-level AES-256-CTR encryption (default: ON). Every object uploaded to an encrypted bucket is automatically encrypted with a unique AES-256 key generated per object. Encryption can be enabled or disabled at bucket creation or update time via the management console or admin API.
+
+- **Taint**: A node status that marks a node as unhealthy or under maintenance. Tainted nodes are excluded from new data writes and object placement, while existing data remains readable. Nodes can be manually tainted by an administrator (for maintenance or troubleshooting) or automatically tainted when all disks are full. The taint state is propagated across the cluster via gossip protocol.
+
+- **Task**: A background administrative operation that runs on a target node for long-running maintenance activities. Tasks follow a lifecycle of Pending → Running → Completed / Failed / Cancelled. Supported task types include `repair` (scans and repairs corrupted file fragments) and `replacedisk` (migrates data from an old disk to a new disk).
 
 ### Cluster Architecture
 
@@ -243,7 +250,8 @@ Visit `http://localhost:7946/console` with the default administrator account:
 | Object Management | Upload/download/delete objects, preview file contents | [ObjectList](docs/pics/object.jpg), [ObjectInfo](docs/pics/objectinfo.jpg) |
 | Object Versioning Management | Upload/download/delete objects, preview file contents | [ObjectVersionList](docs/pics/versionObjectList.jpg), [VersionList](docs/pics/versionList.jpg) |
 | Multipart Management | Complete/abort | [MultipartList](docs/pics/multipart.jpg), [MultipartInfo](docs/pics/partdetail.jpg), [MultipartFragmentInfo](docs/pics/partfragment.jpg) |
-| Node Management | View node status, add/remove nodes | [NodeList](docs/pics/node.jpg) |
+| Task Management | Create task, Active/history task list | [TaskList](docs/pics/tasklist.jpg), [TaskDetail](docs/pics/taskdetail.jpg) |
+| Node Management | View node status, Taint/active nodes | [NodeList](docs/pics/node.jpg) |
 | Internationalization | Switch languages | [Internationalization](docs/pics/internationalization.jpg) |
 
 ## User Roles and Groups
@@ -389,6 +397,27 @@ StoreFS provides an [MCP (Model Context Protocol)](https://modelcontextprotocol.
 ### Documentation
 
 For detailed information, please refer to: [MCP Server Guide](docs/mcp.md)
+
+## Task System
+
+StoreFS provides a task system for long-running administrative operations on the cluster, such as repairing corrupted file fragments and replacing failed disks.
+
+### Task Types
+
+- **Repair Task** (`repair`): Scans and repairs corrupted or missing file fragments on a specified node. Supports both replica and erasure code (EC) policies — automatically reconstructs data from healthy nodes.
+- **Replace Disk Task** (`replacedisk`): Migrates all data from an old disk to a new disk on the same node. Used when a physical disk needs replacement or upgrade.
+
+### Key Features
+
+- **Background Execution**: Tasks run asynchronously in the background with progress tracking
+- **Per-Node Concurrency**: The same task type on different nodes can run simultaneously
+- **Cancel Support**: Running tasks can be safely cancelled
+- **Super Admin Only**: Repair and replace-disk operations require `super_admin` role
+- **MCP Integration**: Create and manage tasks through natural language
+
+### Documentation
+
+For detailed information, please refer to: [Task System Documentation](docs/task.md)
 
 ## Quick Start
 

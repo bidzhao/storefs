@@ -103,6 +103,7 @@ CREATE TABLE IF NOT EXISTS object_md
 DISTRIBUTED BY HASH(bucket_id) BUCKETS 32 PROPERTIES (
     "compression" = "zstd",
     "enable_persistent_index" = "true",
+    "bloom_filter_columns" = "id",
     "replication_num" = "1"
 );
 
@@ -132,6 +133,7 @@ CREATE TABLE IF NOT EXISTS object_v_md
 DISTRIBUTED BY HASH(bucket_id) BUCKETS 32 PROPERTIES (
     "compression" = "zstd",
     "enable_persistent_index" = "true",
+    "bloom_filter_columns" = "id",
     "replication_num" = "1"
 );
 
@@ -149,7 +151,8 @@ CREATE TABLE IF NOT EXISTS fragment_md
     write_time    DATETIME      NOT NULL COMMENT 'write time',
     created_at    DATETIME               DEFAULT CURRENT_TIMESTAMP COMMENT 'create time',
     status        VARCHAR(32)   NOT NULL DEFAULT 'pending' COMMENT 'write status: pending/completed/failure/interrupted',
-    INDEX index_fragment_md_status (status) USING BITMAP
+    INDEX index_fragment_md_status (status) USING BITMAP,
+    INDEX index_fragment_md_node_name(node_name) USING BITMAP
 ) PRIMARY KEY (object_id, fragment_id, shard_id, node_name)
 DISTRIBUTED BY HASH(object_id) BUCKETS 64 PROPERTIES (
     "compression" = "zstd",
@@ -212,13 +215,46 @@ CREATE TABLE IF NOT EXISTS part_fragments
     crc           VARCHAR(64)   NOT NULL COMMENT 'CRC checksum',
     created_at    DATETIME               DEFAULT CURRENT_TIMESTAMP COMMENT 'create time',
     status        VARCHAR(32)   NOT NULL DEFAULT 'active' COMMENT 'status: active/completed/aborted',
-    INDEX index_part_fragments_status (status) USING BITMAP
+    INDEX index_part_fragments_status (status) USING BITMAP,
+    INDEX index_part_fragments__node_name(node_name) USING BITMAP
 ) PRIMARY KEY (part_id, fragment_id, shard_id, node_name)
 DISTRIBUTED BY HASH(part_id) BUCKETS 64 PROPERTIES (
     "compression" = "zstd",
     "enable_persistent_index" = "true",
     "replication_num" = "1"
 );
+
+CREATE TABLE IF NOT EXISTS node_status
+(
+    node_name      VARCHAR(128)  NOT NULL COMMENT 'node name',
+    status         VARCHAR(32)   NOT NULL DEFAULT 'active' COMMENT 'status: active/taint',
+    operator       BIGINT        NOT NULL COMMENT 'operator id',
+    last_update_at DATETIME      NOT NULL DEFAULT CURRENT_TIMESTAMP COMMENT 'create time'
+) PRIMARY KEY (node_name)
+DISTRIBUTED BY HASH(node_name) BUCKETS 3 PROPERTIES (
+    "replication_num" = "1"
+);
+
+CREATE TABLE IF NOT EXISTS tasks (
+    id                BIGINT       NOT NULL,
+    name              VARCHAR(256) NOT NULL,
+    type              VARCHAR(64)  NOT NULL,
+    status            VARCHAR(32)  NOT NULL DEFAULT 'pending',
+    node_name         VARCHAR(128),
+    params            TEXT,
+    output            TEXT,
+    error_message     TEXT,
+    progress          INT          NOT NULL DEFAULT '0',
+    started_at        DATETIME,
+    completed_at      DATETIME,
+    created_by        BIGINT       NOT NULL,
+    created_at        DATETIME     NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    updated_at        DATETIME     NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    INDEX idx_tasks_status(status) USING BITMAP,
+    INDEX idx_tasks_type(type) USING BITMAP,
+    INDEX idx_tasks_node_name(node_name) USING BITMAP
+) PRIMARY KEY(id)
+DISTRIBUTED BY HASH(id) BUCKETS 16;
 
 INSERT INTO user_groups (id, name, default_policy_id)
 VALUES (1, 'default', NULL);

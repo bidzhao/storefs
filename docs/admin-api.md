@@ -807,15 +807,3 @@ const usersData = await usersResponse.json();
 console.log(usersData.users);
 ```
 
-## Unimplemented Features
-
-Currently, the following Admin API features are not yet implemented:
-
-- Bucket policies and ACL management
-- Object version control
-- Data replication and migration
-- Storage usage statistics
-- Audit logs
-- Node configuration updates
-
-These features will be gradually implemented in future versions.

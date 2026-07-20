@@ -23,12 +23,14 @@
 │                       │       │  - 桶和对象管理              │
 │                       │       │  - 分块上传管理              │
 │                       │       │  - S3 数据操作               │
+│                       │       │  - 任务管理                  │
 └───────────┬───────────┘       └──────────────────────────────┘
             │
             ├──────── HTTP ────────► Admin REST API (端口 7946)
             │                        └─ /api/auth/*, /api/users/*
             │                          /api/buckets/*, /api/policies/*
             │                          /api/groups/*, /api/node/*
+            │                          /api/tasks/*
             │                          /metrics
             │
             └──────── HTTP ────────► S3 REST API (端口 8901)
@@ -110,7 +112,7 @@ storefs_login(username="admin", password="your-password")
 
 ## 功能概览
 
-MCP 服务器提供 **40 多个工具**，分为六个功能组：
+MCP 服务器提供 **40 多个工具**，分为八个功能组：
 
 ### 1. 系统工具
 
@@ -120,9 +122,11 @@ MCP 服务器提供 **40 多个工具**，分为六个功能组：
 | `storefs_login` | 使用用户名/密码认证 |
 | `storefs_logout` | 清除当前认证会话 |
 | `storefs_whoami` | 显示当前登录用户信息 |
-| `storefs_cluster_status` | 列出所有节点、磁盘及使用情况 |
+| `storefs_cluster_status` | 列出所有节点、磁盘、使用情况及污点状态 |
 | `storefs_node_metrics` | 获取 Prometheus 指标（可选过滤） |
 | `storefs_change_password` | 修改当前用户的密码 |
+| `storefs_list_node_status` | 查看所有节点的污点状态 |
+| `storefs_update_node_status` | 更新节点的污点状态（仅 super_admin） |
 
 ### 2. 用户与分组管理工具
 
@@ -205,6 +209,24 @@ MCP 服务器提供 **40 多个工具**，分为六个功能组：
 
 > **注意：** S3 数据操作使用当前用户的 AccessKey/SecretKey，登录后会自动获取。如果用户没有密钥，使用 `storefs_rotate_access_keys` 生成。
 
+### 7. 任务管理工具
+
+| 工具 | 说明 |
+|------|------|
+| `storefs_list_task_types` | 列出所有可用的任务类型 |
+| `storefs_list_tasks` | 列出所有任务（支持分页和状态过滤） |
+| `storefs_get_task` | 获取任务详情 |
+| `storefs_create_task` | 创建任务（通用） |
+| `storefs_create_repair_task` | 创建修复任务 — 修复节点上损坏/丢失的碎片（需 super_admin 权限） |
+| `storefs_create_replacedisk_task` | 创建替换磁盘任务 — 将旧磁盘数据迁移到新磁盘（需 super_admin 权限） |
+| `storefs_cancel_task` | 取消运行中的任务 |
+| `storefs_delete_task` | 删除任务（运行中的任务会先取消） |
+| `storefs_cleanup_tasks` | 清理过期的已完成/失败任务（需 super_admin 权限） |
+
+任务是异步后台操作，在指定节点上执行。使用 `storefs_list_tasks` 监控进度，`storefs_get_task` 查看详情。
+
+关于任务系统、修复和替换磁盘操作的详细文档，请参考[任务系统文档](task_cn.md)。
+
 ---
 
 ## 常用提示词
@@ -217,6 +239,9 @@ MCP 服务器提供 **40 多个工具**，分为六个功能组：
 检查集群健康状态
 查看集群状态——所有节点和磁盘使用情况
 获取节点指标，过滤关键词 "cpu"
+查看所有节点的污点状态
+更新节点 "node3" 的污点状态为 "taint"
+将节点 "node3" 的污点状态恢复为 "active"
 ```
 
 ### 用户管理
@@ -294,6 +319,10 @@ MCP 服务器提供 **40 多个工具**，分为六个功能组：
 查找需要清理的未完成分块上传
 显示占用磁盘空间最大的桶
 列出 "admin" 分组中的所有用户
+列出所有任务及其状态
+查看任务 42 的详情
+为节点 "node1" 创建一个 replacedisk 任务，旧盘 "/data/disk1"，新盘 "/data/disk2"
+取消运行中的任务 15
 ```
 
 ---

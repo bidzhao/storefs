@@ -83,12 +83,81 @@ StoreFS 支持以下备份方式：
 2. 恢复数据文件：将备份的文件复制到相应位置
 3. 启动节点：`./storefs -config config.yaml`
 
-#### 3.3 如何处理磁盘故障？
+#### 3.3 如何更换磁盘？
 
-1. 替换故障磁盘
-2. 在新磁盘上创建相同的目录结构
-3. 重新配置节点：在 `config.yaml` 中更新磁盘路径
-4. 重启节点
+StoreFS 支持通过任务系统在线更换磁盘，无需停服即可完成旧盘到新盘的数据迁移。
+
+操作步骤：
+
+1. **设置节点为污点状态** — 标记节点进入维护模式，阻止新数据写入。可通过以下任一方式：
+   - **Web Admin Console**：节点管理 → 将目标节点状态设为 "taint"
+   - **Admin API**：`curl -X PUT http://<node-ip>:7946/api/node-status/<节点名称> -H "Authorization: Bearer <token>" -d '{"status":"taint"}'`
+   - **MCP**：`storefs_update_node_status(nodeName="<节点名称>", status="taint")`
+
+2. **对污点节点执行 ReplaceDisk 任务**，将数据从旧磁盘迁移到新磁盘：
+   - **Web Admin Console**：任务管理 → 创建任务 → 选择 "Replace Disk" 类型，选择目标节点，填入旧磁盘路径和新磁盘路径
+   - **Admin API**：`curl -X POST http://<node-ip>:7946/api/tasks -H "Authorization: Bearer <token>" -H "Content-Type: application/json" -d '{"type":"replacedisk","params":{"oldDiskPath":"/data/old-disk","newDiskPath":"/data/new-disk","nodeName":"<节点名称>"}}'`
+   - **MCP**：`storefs_create_task(type="replacedisk", params={oldDiskPath: "/data/old-disk", newDiskPath: "/data/new-disk", nodeName: "<节点名称>"})`
+
+   可通过以下方式查看任务执行进度：
+   - **Web Admin Console**：任务管理 → 活跃任务（进度条实时更新）
+   - **Admin API**：`curl http://<node-ip>:7946/api/tasks/<任务ID> -H "Authorization: Bearer <token>"`
+   - **MCP**：`storefs_get_task(taskId=...)`
+
+3. **取消节点的污点状态**，任务成功后恢复为正常状态：
+   - **Web Admin Console**：节点管理 → 将节点状态设为 "active"
+   - **Admin API**：`curl -X PUT http://<node-ip>:7946/api/node-status/<节点名称> -H "Authorization: Bearer <token>" -d '{"status":"active"}'`
+   - **MCP**：`storefs_update_node_status(nodeName="<节点名称>", status="active")`
+
+> **注意**：`replacedisk` 任务也可通过 S3 控制台的任务管理界面创建和查看进度。所有操作仅 `super_admin` 角色可执行。
+
+#### 3.4 何时需要执行 Repair（修复碎片）任务？
+
+Repair 任务用于重建丢失或不一致的片段元数据。在以下场景中应执行 Repair：
+
+- **节点异常重启后** — 某些片段可能未正确刷盘，导致元数据不一致
+- **磁盘更换后** — 新磁盘上线后，旧磁盘上的片段引用可能需要更新
+- **集群故障恢复时** — 当元数据与实际数据不同步时，通过 Repair 扫描并重建片段索引
+- **定期健康检查** — 在低负载时段主动执行 Repair，提前发现并修复片段级别的问题
+
+操作步骤：
+
+1. **设置节点为污点状态**（如果针对特定节点修复）：
+   - **Web Admin Console**：节点管理 → 将目标节点状态设为 "taint"
+   - **Admin API**：`curl -X PUT http://<node-ip>:7946/api/node-status/<节点名称> -H "Authorization: Bearer <token>" -d '{"status":"taint"}'`
+
+2. **对节点执行 Repair 任务**：
+   - **Web Admin Console**：任务管理 → 创建任务 → 选择 "Repair Fragments" 类型，选择目标节点，可选指定磁盘路径以只修复该磁盘
+   - **Admin API**：`curl -X POST http://<node-ip>:7946/api/tasks -H "Authorization: Bearer <token>" -H "Content-Type: application/json" -d '{"type":"repair","params":{"node":"<节点名称>","disk":"/data/disk1"}}'`
+   - **MCP**：`storefs_create_task(type="repair", params={node: "<节点名称>", disk: "/data/disk1"})`
+
+   > `disk` 参数为可选项。不指定时修复节点上所有磁盘。
+
+   可通过以下方式查看进度：
+   - **Web Admin Console**：任务管理 → 活跃任务
+   - **Admin API**：`curl http://<node-ip>:7946/api/tasks/<任务ID> -H "Authorization: Bearer <token>"`
+   - **MCP**：`storefs_get_task(taskId=...)`
+
+3. **取消节点的污点状态**，任务完成后恢复为正常状态：
+   - **Web Admin Console**：节点管理 → 将节点状态设为 "active"
+   - **Admin API**：`curl -X PUT http://<node-ip>:7946/api/node-status/<节点名称> -H "Authorization: Bearer <token>" -d '{"status":"active"}'`
+   - **MCP**：`storefs_update_node_status(nodeName="<节点名称>", status="active")`
+
+> **注意**：Repair 任务是只读操作 — 它扫描并修复片段元数据，不会移动数据。可以在运行中的节点上安全执行，但建议先设置污点状态以避免修复过程中有新数据写入。
+
+#### 3.5 何时需要执行 ReplaceDisk（替换磁盘）任务？
+
+ReplaceDisk 任务将数据从一个磁盘迁移到同一节点上的另一个磁盘。与 Repair 不同，ReplaceDisk 是物理移动数据。在以下场景中应执行 ReplaceDisk：
+
+- **磁盘故障或降级** — 磁盘出现 I/O 错误、坏道或即将故障时，将数据迁移到健康磁盘
+- **磁盘容量升级** — 用小容量磁盘替换大容量磁盘时，将数据迁移到新磁盘
+- **磁盘性能升级** — 用 SSD 替换 HDD 时，将数据迁移到更快的磁盘
+- **磁盘路径变更** — 磁盘挂载点或目录路径发生变化时，将数据迁移到新路径
+- **磁盘下线** — 需要从节点中移除磁盘时，先将数据迁移到其他磁盘
+
+具体操作步骤与 [3.3 如何更换磁盘？](#3-3-如何更换磁盘) 相同。
+
+> **注意**：ReplaceDisk 是数据移动操作，而非只读操作。启动任务前请确保目标磁盘有足够容量。执行 ReplaceDisk 前应将节点设为污点状态，防止迁移过程中有新数据写入。
 
 ### 4. 性能优化
 
