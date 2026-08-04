@@ -25,3 +25,37 @@ cluster:
     - node1:7946
     - node2:7946
     - node3:7946
+audit:
+  enabled: false
+  level: info
+  outputs:
+    - db
+  retention_days: 90
+  cleanup_interval: 1h
+  filters:
+    exclude_health_checks: true
+gateway:
+  nfs:
+    enabled: false               # Enable NFS gateway
+    port: 2049                  # NFS service port (supports NFSv3 + MOUNT protocol)
+    export_path: "/"            # Exported root path for NFS clients to mount
+    auth_type: "none"           # Authentication type: "none" | "sys" | "krb5"
+                                #   - none: No authentication, use map_user for all clients
+                                #   - sys: UNIX authentication, use AUTH_UNIX credentials (overrides none)
+                                #   - krb5: Kerberos authentication (requires RPCSEC_GSS support in go-nfs v0.0.4)
+    map_user: "user"            # StoreFS user mapped for anonymous NFS clients
+    map_uid: 1000               # UID mapped for NFS clients (used by Sys() authentication)
+    map_gid: 1000               # GID mapped for NFS clients
+    uid_mappings: {}             # UID to StoreFS user mappings for auth_type=sys
+    read_only: false             # true disables Remove/WriteCapability operations
+    max_connections: 1024        # Maximum cached NFS client connections (LRU eviction, similar to HandleLimit)
+  smb:
+    enabled: false                     # Enable SMB 3.1.1 gateway
+    port: 4445                        # SMB service port (use a non-privileged port for testing; 445 requires root)
+    server_name: "STOREFS"            # NetBIOS server name advertised to clients
+    workgroup: "WORKGROUP"            # Workgroup/domain name for NTLMSSP authentication
+    share_name: "storefs"             # Share name that clients mount (e.g. \\127.0.0.1\storefs)
+    guest_allowed: true               # Allow anonymous/guest access (maps to map_user)
+    read_only: false                  # false = read-write; true = export share as read-only
+    map_user: "user"                 # StoreFS user that guest/anonymous connections map to
+    max_connections: 1024             # Maximum concurrent client connections

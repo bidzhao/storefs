@@ -79,6 +79,41 @@ s3file --silent --command 'cd s3://mybucket; download remote.txt /path/to/local.
 | `--ssl` | 使用 SSL/TLS 连接 | `false` |
 | `--no-banner` | 不显示欢迎横幅 | - |
 
+## StoreFS 探测
+
+当连接到 StoreFS 服务器时，s3file 会自动检测（通过检查 S3 API 响应中的 `X-StoreFS-Version` 头），并启用优化功能：
+
+### 快速目录列表
+
+检测到 StoreFS 后，`ls` 命令会使用 **Admin API**（`/api/buckets/{name}/entries`）替代 S3 `ListObjectsV2` 来列出目录内容。因为 Admin API 直接查询元数据库而非扫描对象存储，所以列表性能显著提升。
+
+快速路径自动启用，无需额外配置。如果 Admin API 不可用，s3file 会自动回退到标准 S3 `ListObjectsV2` 方式。
+
+### 连接信息
+
+使用 `info` 命令查看 StoreFS 探测状态：
+
+```
+no bucket selected> info
+────────────────────────────────────────────────────────────
+Endpoint:       http://127.0.0.1:8901
+Region:         us-east-1
+...
+StoreFS:        Detected (version v0.4.0)
+Admin API:      http://127.0.0.1:7946
+Admin API:      Connected
+────────────────────────────────────────────────────────────
+```
+
+如果服务器不是 StoreFS 实例，则显示：
+```
+StoreFS:        Not detected
+```
+
+## 隐藏文件
+
+在 StoreFS 模式下，`ls` 默认隐藏内部系统文件（名称以 `_sys_` 开头的文件）。使用 `ls --all` 或 `ls -a` 可显示所有条目，包括系统文件。
+
 ## 环境变量
 
 | 变量 | 描述 |
@@ -311,7 +346,7 @@ connect --interactive
 ```bash
 $ s3file
 ╔══════════════════════════════════════════════════════════════════════════╗
-║                        S3 File System CLI v0.3.9                         ║
+║                        S3 File System CLI v0.4.0                         ║
 ║      Supports StoreFS, MinIO, AWS S3, and all S3-compatible services     ║
 ╚══════════════════════════════════════════════════════════════════════════╝
 Type 'help' for available commands

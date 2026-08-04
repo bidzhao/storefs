@@ -1,5 +1,3 @@
-**[English](s3.md)**
-
 # S3 API 文档
 
 ## 概要
@@ -206,6 +204,211 @@ Authorization: AWS4-HMAC-SHA256 Credential=<AK>/20230101/us-east-1/s3/aws4_reque
 - 404 Not Found：桶不存在或对象锁定未配置
 - 403 Forbidden：无权限
 - 401 Unauthorized：认证失败
+
+#### 1.7 获取桶标签（GetBucketTagging）
+
+**URL**：`GET /<bucket>?tagging`
+
+**请求**：
+```http
+GET /mybucket?tagging HTTP/1.1
+Host: 127.0.0.1:8901
+Authorization: AWS4-HMAC-SHA256 Credential=<AK>/20230101/us-east-1/s3/aws4_request, SignedHeaders=..., Signature=...
+```
+
+**响应**（200 OK）：
+```xml
+<?xml version="1.0" encoding="UTF-8"?>
+<Tagging xmlns="http://s3.amazonaws.com/doc/2006-03-01/">
+  <TagSet>
+    <Tag>
+      <Key>project</Key>
+      <Value>storefs</Value>
+    </Tag>
+    <Tag>
+      <Key>owner</Key>
+      <Value>admin</Value>
+    </Tag>
+  </TagSet>
+</Tagging>
+```
+
+**说明**：
+- 返回桶的所有标签
+- 标签是键值对形式（每个桶最多 50 个标签）
+- 标签键长度：1-128 字符，标签值长度：0-256 字符
+- 只有桶所有者或管理员可以访问此API
+
+**错误响应**：
+- 404 Not Found：桶不存在
+- 403 Forbidden：无权限
+- 401 Unauthorized：认证失败
+
+#### 1.8 设置桶标签（PutBucketTagging）
+
+**URL**：`PUT /<bucket>?tagging`
+
+**请求**：
+```http
+PUT /mybucket?tagging HTTP/1.1
+Host: 127.0.0.1:8901
+Content-Type: application/xml
+Authorization: AWS4-HMAC-SHA256 Credential=<AK>/20230101/us-east-1/s3/aws4_request, SignedHeaders=..., Signature=...
+
+<Tagging xmlns="http://s3.amazonaws.com/doc/2006-03-01/">
+  <TagSet>
+    <Tag>
+      <Key>project</Key>
+      <Value>storefs</Value>
+    </Tag>
+    <Tag>
+      <Key>owner</Key>
+      <Value>admin</Value>
+    </Tag>
+  </TagSet>
+</Tagging>
+```
+
+**说明**：
+- 原子替换所有现有标签为提供的标签
+- 每个桶最多 50 个标签
+- 标签键：1-128 字符，标签值：0-256 字符
+- 只有桶所有者或管理员可以访问此API
+
+**响应**：
+```http
+HTTP/1.1 200 OK
+Content-Length: 0
+```
+
+**错误响应**：
+- 404 Not Found：桶不存在
+- 403 Forbidden：无权限
+- 400 Bad Request：标签格式无效或标签数量过多
+- 401 Unauthorized：认证失败
+
+#### 1.9 删除桶标签（DeleteBucketTagging）
+
+**URL**：`DELETE /<bucket>?tagging`
+
+**请求**：
+```http
+DELETE /mybucket?tagging HTTP/1.1
+Host: 127.0.0.1:8901
+Authorization: AWS4-HMAC-SHA256 Credential=<AK>/20230101/us-east-1/s3/aws4_request, SignedHeaders=..., Signature=...
+```
+
+**说明**：
+- 删除桶的所有标签
+- 只有桶所有者或管理员可以访问此API
+
+**响应**：
+```http
+HTTP/1.1 204 No Content
+Content-Length: 0
+```
+
+**错误响应**：
+- 404 Not Found：桶不存在
+- 403 Forbidden：无权限
+- 401 Unauthorized：认证失败
+
+#### 1.10 获取桶 ACL（GetBucketAcl）
+
+**URL**：`GET /<bucket>?acl`
+
+**请求**：
+```http
+GET /mybucket?acl HTTP/1.1
+Host: 127.0.0.1:8901
+Authorization: AWS4-HMAC-SHA256 Credential=<AK>/20230101/us-east-1/s3/aws4_request, SignedHeaders=..., Signature=...
+```
+
+**响应**：
+```xml
+<?xml version="1.0" encoding="UTF-8"?>
+<AccessControlPolicy xmlns="http://s3.amazonaws.com/doc/2006-03-01/">
+  <Owner>
+    <ID>1</ID>
+    <DisplayName>admin</DisplayName>
+  </Owner>
+  <AccessControlList>
+    <Grant>
+      <Grantee xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:type="CanonicalUser">
+        <ID>1</ID>
+        <DisplayName>admin</DisplayName>
+      </Grantee>
+      <Permission>FULL_CONTROL</Permission>
+    </Grant>
+  </AccessControlList>
+</AccessControlPolicy>
+```
+
+**所需权限**：`READ_ACP`
+
+**错误响应**：
+- 404 Not Found：桶不存在
+- 403 Forbidden：无 `READ_ACP` 权限
+
+#### 1.11 设置桶 ACL（PutBucketAcl）
+
+**URL**：`PUT /<bucket>?acl`
+
+**请求**：
+```http
+PUT /mybucket?acl HTTP/1.1
+Host: 127.0.0.1:8901
+Content-Type: application/xml
+Authorization: AWS4-HMAC-SHA256 Credential=<AK>/20230101/us-east-1/s3/aws4_request, SignedHeaders=..., Signature=...
+
+<AccessControlPolicy xmlns="http://s3.amazonaws.com/doc/2006-03-01/">
+  <Owner>
+    <ID>1</ID>
+  </Owner>
+  <AccessControlList>
+    <Grant>
+      <Grantee xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:type="CanonicalUser">
+        <ID>1</ID>
+      </Grantee>
+      <Permission>FULL_CONTROL</Permission>
+    </Grant>
+    <Grant>
+      <Grantee xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:type="Group">
+        <URI>http://acs.amazonaws.com/groups/global/AllUsers</URI>
+      </Grantee>
+      <Permission>READ</Permission>
+    </Grant>
+  </AccessControlList>
+</AccessControlPolicy>
+```
+
+**授权对象类型**：
+| xsi:type | 标识 | 说明 |
+|----------|------|------|
+| `CanonicalUser` | `<ID>` | 指定用户（通过用户 ID） |
+| `Group` | `<URI>` | `http://acs.amazonaws.com/groups/global/AllUsers` — 所有用户（含匿名） |
+| `Group` | `<URI>` | `http://acs.amazonaws.com/groups/global/AuthenticatedUsers` — 任意已认证用户 |
+
+**权限说明**：
+| 权限 | 说明 | 隐含关系 |
+|------|------|----------|
+| `FULL_CONTROL` | 桶和对象的完全控制 | — |
+| `WRITE` | 写入/删除对象 | FULL_CONTROL |
+| `READ` | 读取对象和列出桶 | FULL_CONTROL |
+| `READ_ACP` | 读取桶 ACL | FULL_CONTROL, WRITE_ACP |
+| `WRITE_ACP` | 修改桶 ACL | FULL_CONTROL |
+
+**所需权限**：`WRITE_ACP`
+
+**说明**：
+- Owner 始终自动保留 `FULL_CONTROL`（请求中缺失时自动添加）
+- 重复授权（相同授权对象 + 相同权限）会自动去重
+- 设置 ACL 会原子替换所有现有 ACL 条目
+
+**错误响应**：
+- 404 Not Found：桶不存在
+- 403 Forbidden：无 `WRITE_ACP` 权限
+- 400 Bad Request：XML 格式错误
 
 ### 2. 对象操作（Object Operations）
 
@@ -637,6 +840,342 @@ Authorization: AWS4-HMAC-SHA256 Credential=<AK>/20230101/us-east-1/s3/aws4_reque
 - 403 Forbidden：无权限
 - 400 Bad Request：无效的versionId
 - 401 Unauthorized：认证失败
+
+#### 2.8 对象标签（Object Tagging）
+
+对象标签允许您为存储的对象分配键值对（标签）。标签可用于分类、访问控制和成本跟踪。
+
+**标签规则**：
+- 每个对象最多 10 个标签
+- 标签键长度：1-128 字符
+- 标签值长度：0-256 字符
+- 标签是版本感知的：启用版本控制时，标签按对象版本存储
+
+##### 2.8.1 获取对象标签（GetObjectTagging）
+
+**URL**：`GET /<bucket>/<object>?tagging[&versionId=<version_id>]`
+
+**请求参数**：
+- `versionId`（可选）：特定对象版本的ID
+
+**请求**：
+```http
+GET /mybucket/document.pdf?tagging HTTP/1.1
+Host: 127.0.0.1:8901
+Authorization: AWS4-HMAC-SHA256 Credential=<AK>/20230101/us-east-1/s3/aws4_request, SignedHeaders=..., Signature=...
+```
+
+**响应**（200 OK）：
+```xml
+<?xml version="1.0" encoding="UTF-8"?>
+<Tagging xmlns="http://s3.amazonaws.com/doc/2006-03-01/">
+  <TagSet>
+    <Tag>
+      <Key>department</Key>
+      <Value>engineering</Value>
+    </Tag>
+    <Tag>
+      <Key>type</Key>
+      <Value>report</Value>
+    </Tag>
+  </TagSet>
+</Tagging>
+```
+
+**错误响应**：
+- 404 Not Found：桶或对象不存在
+- 403 Forbidden：无权限
+- 401 Unauthorized：认证失败
+
+##### 2.8.2 设置对象标签（PutObjectTagging）
+
+**URL**：`PUT /<bucket>/<object>?tagging[&versionId=<version_id>]`
+
+**请求参数**：
+- `versionId`（可选）：特定对象版本的ID
+
+**请求**：
+```http
+PUT /mybucket/document.pdf?tagging HTTP/1.1
+Host: 127.0.0.1:8901
+Content-Type: application/xml
+Authorization: AWS4-HMAC-SHA256 Credential=<AK>/20230101/us-east-1/s3/aws4_request, SignedHeaders=..., Signature=...
+
+<Tagging xmlns="http://s3.amazonaws.com/doc/2006-03-01/">
+  <TagSet>
+    <Tag>
+      <Key>department</Key>
+      <Value>engineering</Value>
+    </Tag>
+    <Tag>
+      <Key>type</Key>
+      <Value>report</Value>
+    </Tag>
+  </TagSet>
+</Tagging>
+```
+
+**说明**：
+- 原子替换对象的所有现有标签
+- 每个对象最多 10 个标签
+- 启用版本控制时，标签应用于指定版本（如果省略 `versionId`，则应用于当前版本）
+
+**响应**：
+```http
+HTTP/1.1 200 OK
+Content-Length: 0
+```
+
+**错误响应**：
+- 404 Not Found：桶或对象不存在
+- 403 Forbidden：无权限
+- 400 Bad Request：标签格式无效、标签数量过多或标签键/值长度无效
+- 401 Unauthorized：认证失败
+
+##### 2.8.3 删除对象标签（DeleteObjectTagging）
+
+**URL**：`DELETE /<bucket>/<object>?tagging[&versionId=<version_id>]`
+
+**请求参数**：
+- `versionId`（可选）：特定对象版本的ID
+
+**请求**：
+```http
+DELETE /mybucket/document.pdf?tagging HTTP/1.1
+Host: 127.0.0.1:8901
+Authorization: AWS4-HMAC-SHA256 Credential=<AK>/20230101/us-east-1/s3/aws4_request, SignedHeaders=..., Signature=...
+```
+
+**说明**：
+- 删除对象的所有标签
+- 启用版本控制时，标签从指定版本中删除
+
+**响应**：
+```http
+HTTP/1.1 204 No Content
+Content-Length: 0
+```
+
+**错误响应**：
+- 404 Not Found：桶或对象不存在
+- 403 Forbidden：无权限
+- 401 Unauthorized：认证失败
+
+#### 2.9 复制对象时的标签处理（CopyObject with Tagging）
+
+复制对象时，可以通过以下请求头控制标签行为：
+
+**请求头**：
+- `x-amz-tagging-directive`：设置为 `COPY` 以从源对象复制标签，或 `REPLACE`（默认）以从 `x-amz-tagging` 请求头设置标签
+- `x-amz-tagging`：URL编码的标签格式（`key1=value1&key2=value2`），在使用 `REPLACE` 指令时使用
+
+**请求**：
+```http
+PUT /mybucket/destination.pdf HTTP/1.1
+Host: 127.0.0.1:8901
+x-amz-copy-source: /mybucket/source.pdf
+x-amz-tagging-directive: REPLACE
+x-amz-tagging: department=engineering&type=report
+Authorization: AWS4-HMAC-SHA256 Credential=<AK>/20230101/us-east-1/s3/aws4_request, SignedHeaders=..., Signature=...
+```
+
+**说明**：
+- `x-amz-tagging-directive: COPY` — 将源对象的标签复制到目标对象
+- `x-amz-tagging-directive: REPLACE`（默认）— 从 `x-amz-tagging` 请求头设置目标对象的标签
+- 如果两个请求头都不存在，目标对象将没有标签
+
+#### 2.10 分块上传标签（Multipart Upload Tagging）
+
+##### 2.10.1 使用标签初始化分块上传
+
+在初始化分块上传时，可以通过 `x-amz-tagging` 请求头指定标签。这些标签将在分块上传完成时自动应用于最终对象。
+
+**URL**：`POST /<bucket>/<object>?uploads`
+
+**请求**：
+```http
+POST /mybucket/largefile.zip?uploads HTTP/1.1
+Host: 127.0.0.1:8901
+Content-Type: application/zip
+x-amz-tagging: project=storefs&department=engineering
+Authorization: AWS4-HMAC-SHA256 Credential=<AK>/20230101/us-east-1/s3/aws4_request, SignedHeaders=..., Signature=...
+```
+
+**说明**：
+- 标签以 URL 编码的键值对格式指定：`key1=value1&key2=value2`
+- 每次分块上传最多 10 个标签
+- 标签与分块上传元数据一起存储，并在完成时应用于最终对象
+- 如果未提供 `x-amz-tagging` 请求头，最终对象将没有标签
+
+#### 2.11 选择对象内容（SelectObjectContent）
+
+S3 Select 允许应用程序使用 SQL 表达式查询结构化对象内容，无需下载整个对象。支持 CSV 和 JSON 格式，并支持 GZIP 解压缩。
+
+**URL**：`POST /<bucket>/<object>?select&select-type=2`
+
+**支持的 SQL 语法**：
+- `SELECT * FROM S3Object` — 选择所有列
+- `SELECT column1, column2 FROM S3Object` — 选择特定列
+- `SELECT * FROM S3Object WHERE condition` — 使用 WHERE 子句过滤行
+- `SELECT COUNT(*) FROM S3Object` — 聚合函数（COUNT, SUM, AVG, MIN, MAX）
+- `SELECT * FROM S3Object LIMIT N` — 限制结果数量
+
+**不支持的 SQL 功能**：
+- JOIN（多表连接）
+- GROUP BY、ORDER BY、HAVING
+- 子查询
+
+**列引用方式**：
+- 当 `FileHeaderInfo=USE`（CSV 含表头）时，列可以通过表头名称引用：`SELECT name, age FROM S3Object`
+- 当 `FileHeaderInfo=NONE` 或 `IGNORE` 时，列按位置使用 `_1`、`_2` ... `_N` 引用：`SELECT _1, _2 FROM S3Object`
+- 对于 JSON 输入，每个记录中的键名作为列名
+
+**支持的 SQL 函数**：
+
+**字符串函数**：
+| 函数 | 说明 |
+|------|------|
+| `SUBSTRING(s, start [, length])` | 提取子串（位置从 1 开始） |
+| `TRIM(s)` | 去除首尾空白字符 |
+| `LTRIM(s)` | 去除前导空白字符 |
+| `RTRIM(s)` | 去除尾部空白字符 |
+| `UPPER(s)` | 转换为大写 |
+| `LOWER(s)` | 转换为小写 |
+| `CHAR_LENGTH(s)` | 字符串的字符数 |
+| `COALESCE(val1, val2, ...)` | 返回第一个非 NULL 值 |
+| `CAST(val AS type)` | 类型转换（字符串转数值） |
+| `NULLIF(val1, val2)` | 如果两值相等则返回 NULL |
+
+**日期函数**：
+| 函数 | 说明 |
+|------|------|
+| `DATE_ADD(date, interval)` | 日期加法（基础支持） |
+| `DATE_SUB(date, interval)` | 日期减法（基础支持） |
+| `DATEDIFF(date1, date2)` | 两日期差值（基础支持） |
+| `EXTRACT(unit FROM date)` | 提取日期部分（基础支持） |
+
+**请求**（CSV 输入，CSV 输出）：
+```http
+POST /mybucket/data.csv?select&select-type=2 HTTP/1.1
+Host: 127.0.0.1:8901
+Content-Type: application/xml
+Authorization: AWS4-HMAC-SHA256 Credential=<AK>/20230101/us-east-1/s3/aws4_request, SignedHeaders=..., Signature=...
+
+<SelectObjectContentRequest xmlns="http://s3.amazonaws.com/doc/2006-03-01/">
+  <Expression>SELECT * FROM S3Object WHERE age > 30</Expression>
+  <ExpressionType>SQL</ExpressionType>
+  <InputSerialization>
+    <CSV>
+      <FileHeaderInfo>USE</FileHeaderInfo>
+      <RecordDelimiter>\n</RecordDelimiter>
+      <FieldDelimiter>,</FieldDelimiter>
+    </CSV>
+    <CompressionType>NONE</CompressionType>
+  </InputSerialization>
+  <OutputSerialization>
+    <CSV>
+      <RecordDelimiter>\n</RecordDelimiter>
+      <FieldDelimiter>,</FieldDelimiter>
+    </CSV>
+  </OutputSerialization>
+  <RequestProgress>
+    <Enabled>true</Enabled>
+  </RequestProgress>
+</SelectObjectContentRequest>
+```
+
+**请求**（JSON 输入，JSON 输出）：
+```http
+POST /mybucket/data.json?select&select-type=2 HTTP/1.1
+Host: 127.0.0.1:8901
+Content-Type: application/xml
+Authorization: AWS4-HMAC-SHA256 Credential=<AK>/20230101/us-east-1/s3/aws4_request, SignedHeaders=..., Signature=...
+
+<SelectObjectContentRequest xmlns="http://s3.amazonaws.com/doc/2006-03-01/">
+  <Expression>SELECT name, age FROM S3Object WHERE age > 25</Expression>
+  <ExpressionType>SQL</ExpressionType>
+  <InputSerialization>
+    <JSON>
+      <Type>LINES</Type>
+    </JSON>
+    <CompressionType>NONE</CompressionType>
+  </InputSerialization>
+  <OutputSerialization>
+    <JSON>
+      <RecordDelimiter>\n</RecordDelimiter>
+    </JSON>
+  </OutputSerialization>
+</SelectObjectContentRequest>
+```
+
+**请求参数**（XML body）：
+
+| 参数 | 说明 |
+|------|------|
+| `Expression` | 要执行的 SQL 表达式（如 `SELECT * FROM S3Object`） |
+| `ExpressionType` | 必须为 `SQL` |
+| `InputSerialization.CSV` | CSV 输入配置（未指定 JSON 时必须） |
+| `InputSerialization.CSV.FileHeaderInfo` | `USE`（首行作列名）、`IGNORE`（跳过首行）、`NONE`（无表头） |
+| `InputSerialization.CSV.FieldDelimiter` | 字段分隔符（默认：`,`） |
+| `InputSerialization.CSV.RecordDelimiter` | 记录分隔符（默认：`\n`） |
+| `InputSerialization.CSV.QuoteChar` | 引号字符（默认：`"`） |
+| `InputSerialization.CSV.QuoteEscapeChar` | 引号转义字符（默认：`"`） |
+| `InputSerialization.CSV.Comments` | 注释字符（以此开头的行将被跳过） |
+| `InputSerialization.JSON` | JSON 输入配置（未指定 CSV 时必须） |
+| `InputSerialization.JSON.Type` | `LINES`（每行一个 JSON 对象）或 `DOCUMENT`（JSON 对象数组） |
+| `InputSerialization.CompressionType` | `NONE`（默认）或 `GZIP` |
+| `OutputSerialization.CSV` | CSV 输出配置 |
+| `OutputSerialization.CSV.FieldDelimiter` | 输出字段分隔符（默认：`,`） |
+| `OutputSerialization.CSV.RecordDelimiter` | 输出记录分隔符（默认：`\n`） |
+| `OutputSerialization.JSON` | JSON 输出配置 |
+| `OutputSerialization.JSON.RecordDelimiter` | 输出记录分隔符（默认：`\n`） |
+| `RequestProgress.Enabled` | 设置为 `true` 以接收定期进度事件 |
+
+**响应**：响应为 **AWS S3 Select 事件流**（二进制格式，使用长度前缀帧和 CRC32 校验和）。流包含以下事件类型：
+
+| 事件类型 | 说明 |
+|---------|------|
+| `Records` | 包含查询结果载荷（CSV 或 JSON 格式的记录） |
+| `Cont` | 长时间运行查询期间的保活事件 |
+| `Progress` | 定期进度信息（启用 `RequestProgress` 时） |
+| `Stats` | 最终统计信息（扫描字节数、返回字节数） |
+| `End` | 表示事件流结束 |
+
+**响应头**：
+```http
+HTTP/1.1 200 OK
+Content-Type: application/octet-stream
+Transfer-Encoding: chunked
+```
+
+**响应体（二进制事件流）**：
+
+事件流使用二进制协议。每个帧的格式如下：
+```
+TotalByteLength (4B) + HeadersByteLength (4B) + PreludeCRC (4B) + Headers + Payload + MessageCRC (4B)
+```
+
+**说明**：
+- JSON 输出格式使用 `_1`、`_2`、...、`_N` 作为键名（如 `{"_1": "Alice", "_2": "35"}`）
+- CSV 输出且 `FileHeaderInfo=USE` 时，使用表头列名；`NONE` 时使用位置引用
+- Progress 和 Stats 事件的 XML 载荷包含 `<BytesScanned>` 和 `<BytesReturned>` 字段
+
+**示例输出**（CSV 输入 `name,age\nAlice,35\nBob,28\n`，查询 `SELECT * FROM S3Object WHERE age > 30`）：
+```
+Alice,35
+[Stats] Scanned: 32 bytes, Returned: 8 bytes
+```
+
+**错误响应**（作为 Records 事件在流中发送）：
+- `InvalidRequest` — XML 请求格式错误
+- `InvalidExpressionType` — 仅支持 `SQL`
+- `InvalidSerialization` — 必须指定 CSV 或 JSON 之一
+- `ParseError` — SQL 解析错误
+- `UnsupportedSQL` — 不支持的 SQL 功能（JOIN、GROUP BY 等）
+- `NoSuchKey` — 对象不存在
+- `AccessDenied` — 无权限
+- `InvalidCompression` — 无效的压缩类型或损坏的 GZIP 数据
+- `InternalError` — 服务器内部错误
 
 ## 桶名规范
 

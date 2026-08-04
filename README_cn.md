@@ -13,8 +13,11 @@
 - [S3 API](#s3-api)
 - [Admin API](#admin-api)
 - [s3file CLI](#s3file-cli)
+- [Gateway (NFS/SMB)](#gateway-nfssmb-1)
 - [监控](#监控)
 - [MCP for AI Agent](#mcp-for-ai-agent)
+- [通知系统](#通知系统)
+- [审计日志](#审计日志)
 - [任务系统](#任务系统)
 - [快速开始](#快速开始)
 - [技术支持](#技术支持)
@@ -41,6 +44,7 @@ StoreFS是一个基于Go语言实现的分布式S3兼容存储系统，采用gos
 - **s3file CLI**：交互式 S3FS 模式，像操作本地文件系统一样浏览对象，支持 Ctrl+C 取消操作。
 - **任务管理**：后台任务系统，用于执行长时间运行的管理操作，如修复损坏的文件片段和替换故障磁盘，支持进度追踪和取消操作。
 - **节点污点标记**：将节点标记为污点（taint）以阻止新数据写入，或重新激活节点——适用于节点维护、磁盘替换或故障排查场景。
+- **事件通知**：基于 Webhook 的桶级别事件通知，当对象创建或删除时自动触发。支持可配置的事件类型、对象键前缀/后缀过滤、HMAC-SHA256 签名验证、指数退避重试，以及原生和 AWS S3 兼容两种负载格式。
 
 ### 核心概念
 
@@ -63,9 +67,17 @@ StoreFS是一个基于Go语言实现的分布式S3兼容存储系统，采用gos
 
 - **Encryption（加密）**：桶级别的 AES-256-CTR 加密（默认：开启）。上传到加密桶的每个对象都会自动生成唯一的 AES-256 密钥并加密存储。可以通过管理控制台或管理 API 在创建或编辑桶时开启或关闭加密。
 
+- **ACL（访问控制列表）**：S3 兼容的桶级别访问控制，支持五种权限（FULL_CONTROL、WRITE、READ、READ_ACP、WRITE_ACP）和三种授权对象类型（CanonicalUser、AllUsers、AuthenticatedUsers）。可通过 S3 XML API 或 Admin JSON API 管理。详细信息，请参考：[ACL 文档](docs/acl_cn.md)
+
+- **Tagging（标签）**：可附加到桶（最多 50 个）和对象（最多 10 个）上的键值对元数据，用于分类、访问控制和成本跟踪。支持通过 S3 API 进行获取/设置/删除操作，启用版本控制时支持版本感知的标签管理。
+
+- **S3 Select（对象内容选择）**：允许使用 SQL 表达式查询结构化对象内容（CSV 和 JSON），无需下载整个对象。支持 SELECT、WHERE、LIMIT、聚合函数（COUNT、SUM、AVG、MIN、MAX）以及多种 SQL 函数（SUBSTRING、TRIM、UPPER、LOWER 等）。支持 GZIP 解压缩。
+
 - **Taint（节点污点标记）**：节点的一种状态，标记节点为不健康或维护中。被标记为污点的节点会被排除在新数据写入和对象放置之外，但已有数据仍可正常读取。节点可以由管理员手动标记为污点（用于维护或故障排查），也可在磁盘满时自动标记。
 
 - **Task（任务）**：一种后台管理操作，在目标节点上执行长时间运行的后台维护活动。任务的生命周期为 Pending（待执行）→ Running（运行中）→ Completed（已完成）/ Failed（失败）/ Cancelled（已取消）。支持的任务类型包括 `repair`（扫描并修复损坏的文件片段）和 `replacedisk`（将旧磁盘数据迁移到新磁盘）。
+
+- **Notification（桶通知）**：桶级别的 Webhook 配置，当匹配的对象事件发生时自动发送 HTTP POST 请求。支持两种负载格式（native 和 AWS S3 兼容）、事件类型过滤、对象键前缀/后缀过滤，以及带指数退避的自动重试。通知持久化到投递队列，提供至少一次投递保证和 3 天 TTL。
 
 ### 集群架构
 
@@ -269,6 +281,18 @@ StoreFS 使用基于角色的访问控制（RBAC）并结合用户组进行权�
 
 > 注意：桶策略仍然控制具体的 S3 操作，例如读、写、列出和删除。角色用于定义管理边界以及用户可以操作的桶所有权范围。
 
+## ACL（访问控制列表）
+
+StoreFS 支持与 S3 兼容的 ACL 用于桶级别权限管理，为不同用户提供细粒度的访问控制。ACL 定义了五种权限（FULL_CONTROL、WRITE、READ、READ_ACP、WRITE_ACP），支持三种授权对象类型（CanonicalUser、AllUsers、AuthenticatedUsers）。可通过 S3 XML API（GetBucketAcl / PutBucketAcl）或 Admin JSON API 进行管理。
+
+详细信息，请参考：[ACL 文档](docs/acl_cn.md)
+
+## 标签管理（Tagging）
+
+StoreFS 支持与 S3 兼容的桶和对象标签功能。标签是键值对，可用于分类、访问控制和成本跟踪。桶最多支持 50 个标签，对象最多支持 10 个标签。启用版本控制时标签是版本感知的，可通过 S3 XML API（GetBucketTagging / PutBucketTagging / DeleteBucketTagging）进行管理。复制操作可通过 `x-amz-tagging-directive` 请求头控制标签行为，分块上传初始化时也可指定标签。
+
+详细信息，请参考：[标签文档](docs/tagging_cn.md)
+
 ## S3 API
 
 ### 概要介绍
@@ -286,6 +310,10 @@ StoreFS实现了S3 API的核心功能，兼容AWS S3的客户端和工具。您�
 - **分块操作**：创建分块上传、上传分块、完成分块上传、取消分块上传、列出分块、列出分块上传
 - **版本控制操作**：获取桶版本控制状态、设置桶版本控制状态
 - **对象锁定操作**：获取桶对象锁定配置、获取对象保留配置
+- **标签操作**：获取/设置/删除桶标签，获取/设置/删除对象标签（版本感知）
+- **S3 Select 操作**：使用 SQL 查询对象内容（CSV/JSON 输入输出，GZIP 解压缩）
+- **ACL 操作**：获取/设置桶 ACL（S3 XML API）
+- **事件通知**：对象创建和删除操作会自动触发事件并投递到已配置的 Webhook 端点（详见[通知文档](docs/notification_cn.md)）
 
 ### 公共URI读取
 
@@ -336,9 +364,15 @@ StoreFS提供了一套RESTful Admin API，用于管理系统的用户、策略�
 - **认证**：登录、登出、修改密码
 - **用户管理**：创建/删除用户、修改用户信息、管理访问密钥
 - **策略管理**：创建/删除策略、修改策略内容
-- **桶管理**：创建/删除桶、修改桶属性、列出桶内容
-- **对象管理**：管理桶中的对象、获取对象元数据
-- **节点管理**：查看节点状态、管理集群节点
+- **用户组管理**：创建/更新/删除用户组，配置默认策略
+- **桶管理**：创建/删除桶、修改桶属性、列出桶内容（支持 ACL 感知的权限字段：`userPermission`、`canReadAcl`、`canWrite`）
+- **对象管理**：管理桶中的对象、获取对象元数据、列出对象版本
+- **分块管理**：列出、获取、完成、取消分块上传；获取分块片段信息
+- **桶 ACL 管理**：通过 JSON API 获取/设置桶 ACL
+- **桶通知管理**：创建/更新/删除/列出桶 Webhook 通知，测试 Webhook 端点
+- **节点管理**：查看节点状态、获取污点状态、更新污点状态
+- **任务管理**：列出任务类型、创建/取消/清理后台任务
+- **健康检查**：检查集群健康状态
 
 ## s3file CLI
 
@@ -359,6 +393,55 @@ s3file 是一个用于与 S3 兼容存储服务交互的命令行工具，支持
 ### 文档
 
 详细文档请参考：[s3file CLI 文档](docs/s3file_cn.md)
+
+## Gateway (NFS/SMB)
+
+### 概要介绍
+
+StoreFS 提供 NFSv3 和 SMB 3.1.1 协议网关，让您可以将 S3 存储桶挂载为标准 POSIX 文件系统进行访问。这使得遗留应用程序、文件服务器和操作系统无需任何 S3 SDK 集成即可与 StoreFS 对象存储进行交互。
+
+### 主要特性
+
+- **NFSv3 网关**：完整的 NFSv3 协议实现，支持 MOUNT 协议，支持 `none`、`sys` 和 `krb5` 认证
+- **SMB 3.1.1 网关**：完整的 SMB 3.1.1 协议，兼容 SMB 2.1，支持 NTLMSSP 认证和访客访问
+- **统一 VFS 层**：两个网关共享通用的虚拟文件系统，将 POSIX 操作转换为 S3 对象操作
+- **S3 ↔ NFS/SMB 互操作**：通过一个协议写入的数据可立即通过其他协议访问
+- **用户映射**：NFS/SMB 客户端身份映射到 StoreFS 用户进行认证和授权
+- **只读模式**：两个网关均可配置为只读导出
+- **目录模拟**：S3 扁平命名空间通过零字节标记对象呈现为层次化文件系统
+
+### 配置示例
+
+```yaml
+gateway:
+  nfs:
+    enabled: true
+    port: 2049
+    export_path: "/"
+    auth_type: "none"
+    map_user: "user"
+  smb:
+    enabled: true
+    port: 4445
+    share_name: "storefs"
+    guest_allowed: true
+    map_user: "user"
+```
+
+### 快速挂载
+
+```bash
+# NFS 挂载（Linux）
+sudo mount -t nfs -o vers=3,port=2049,noresvport <storefs-host>:/ /mnt/storefs
+
+# SMB 挂载（Linux）
+sudo mount -t cifs //<storefs-host>:4445/storefs /mnt/storefs \
+  -o username=<user>,password=<pass>,vers=3.1.1
+```
+
+### 文档
+
+详细的架构、配置、使用和故障排除信息，请参考：[Gateway (NFS/SMB) 文档](docs/gateway_cn.md)
 
 ## 监控
 
@@ -396,6 +479,46 @@ StoreFS 提供了 [MCP（模型上下文协议）](https://modelcontextprotocol.
 ### 文档
 
 详细信息请参考：[MCP 服务器指南](docs/mcp_cn.md)
+
+## 通知系统
+
+StoreFS 提供基于 Webhook 的事件通知系统，当桶中的对象被创建或删除时，自动向已配置的端点发送 HTTP POST 请求。该系统与 AWS S3 事件通知兼容。
+
+### 主要特性
+
+- **实时事件**：自动检测并分发对象创建（PutObject、CopyObject、CompleteMultipartUpload）和删除事件
+- **可配置事件类型**：按特定事件类型过滤（如 `s3:ObjectCreated:Put`、`s3:ObjectRemoved:Delete`）或使用通配符（`s3:ObjectCreated:*`、`*`）
+- **对象键过滤**：使用前缀和后缀过滤，限制哪些对象触发通知
+- **两种负载格式**：原生格式（简化的 StoreFS 格式）和 AWS S3 兼容格式
+- **HMAC-SHA256 签名**：可选的密钥签名，用于 Webhook 端点验证
+- **自动重试**：失败投递使用指数退避重试（1秒 → 5秒 → 30秒 → 5分钟 → 30分钟）
+- **持久化队列**：事件持久化到数据库表，提供至少一次投递保证
+- **MCP 集成**：通过自然语言创建和管理通知
+
+### 文档
+
+详细信息请参考：[通知系统文档](docs/notification_cn.md)
+
+## 审计日志
+
+StoreFS 提供完整的审计日志系统，记录集群上所有管理操作和 S3 数据操作。每个 API 请求都会被捕获，包含详细的元数据，包括操作者、操作的资源、时间、客户端 IP、HTTP 状态码和处理耗时。
+
+### 主要特性
+
+- **自动捕获**：每个 Admin API 和 S3 API 请求都会自动记录，无需修改应用程序
+- **丰富的元数据**：记录用户身份、操作类型、资源、客户端 IP、状态码、耗时、请求 ID 等
+- **多输出目标**：支持数据库（StarRocks）、syslog（本地/远程）和文件输出
+- **异步处理**：审计条目通过缓冲通道在后台处理，从不阻塞请求处理
+- **批量插入**：数据库输出使用批量插入（100 条或 1 秒窗口），高效存储
+- **请求追踪**：每个请求携带唯一的 `X-Request-ID` 头部，用于跨集群的分布式追踪
+- **可配置过滤**：排除健康检查或设置最小耗时阈值，减少噪音
+- **自动清理**：基于日期的分区存储，可配置保留期和自动清理
+- **操作检测**：自动从 HTTP 方法和路径检测 50+ 种 Admin API 操作和 30+ 种 S3 操作
+- **Snowflake ID**：每个审计条目使用全局唯一、可按时间排序的 ID
+
+### 文档
+
+详细信息请参考：[审计日志文档](docs/auditlog_cn.md)
 
 ## 任务系统
 

@@ -505,6 +505,15 @@ Authorization: Bearer <token>
       "policyType": "replicas",
       "ownerId": "1",
       "ownerName": "admin",
+      "userPermission": "FULL_CONTROL",
+      "canReadAcl": true,
+      "canWrite": true,
+      "versioning": "Unversioned",
+      "isLocked": false,
+      "lockMode": "COMPLIANCE",
+      "retention": "30",
+      "isPublic": false,
+      "isEncrypted": true,
       "createdAt": "2023-01-01 12:00:00"
     }
   ],
@@ -513,6 +522,20 @@ Authorization: Bearer <token>
   "pageSize": 20
 }
 ```
+
+**New Fields** (since v0.4.0):
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `userPermission` | string | Current user's effective S3 permission on the bucket (`FULL_CONTROL`, `READ, WRITE`, `READ`, or empty) |
+| `canReadAcl` | bool | Whether the current user can read the bucket ACL |
+| `canWrite` | bool | Whether the current user can write/delete objects in the bucket |
+| `versioning` | string | Versioning status: `Unversioned`, `Enabled`, or `Suspended` |
+| `isLocked` | bool | Whether object lock is enabled |
+| `lockMode` | string | Object lock mode: `COMPLIANCE` or `GOVERNANCE` |
+| `retention` | string | Default retention period in days |
+| `isPublic` | bool | Whether public read access is enabled |
+| `isEncrypted` | bool | Whether server-side encryption is enabled |
 
 #### 4.2 Get Bucket
 
@@ -533,7 +556,18 @@ Authorization: Bearer <token>
   "policyType": "replicas",
   "ownerId": "1",
   "ownerName": "admin",
-  "createdAt": "2023-01-01 12:00:00"
+  "userPermission": "FULL_CONTROL",
+  "canReadAcl": true,
+  "canWrite": true,
+  "versioning": "Unversioned",
+  "isLocked": false,
+  "lockMode": "COMPLIANCE",
+  "retention": "30",
+  "isPublic": false,
+  "isEncrypted": true,
+  "lastUpdatedAt": "2023-01-01 12:00:00",
+  "createdAt": "2023-01-01 12:00:00",
+  "tags": []
 }
 ```
 
@@ -612,6 +646,192 @@ Authorization: Bearer <token>
 ```
 
 **Note**: Only empty buckets can be deleted.
+
+#### 4.6 Get Bucket ACL
+
+**URL**: `GET /api/buckets/:id/acl`
+
+**Request Header**:
+```http
+Authorization: Bearer <token>
+```
+
+**Response**:
+```json
+{
+  "bucketId": "2081560956567031808",
+  "ownerId": "1",
+  "ownerName": "admin",
+  "grants": [
+    {
+      "id": "1",
+      "granteeId": "1",
+      "granteeName": "admin",
+      "granteeType": "canonical_user",
+      "permission": "FULL_CONTROL"
+    },
+    {
+      "granteeType": "all_users",
+      "granteeUri": "http://acs.amazonaws.com/groups/global/AllUsers",
+      "permission": "READ"
+    }
+  ]
+}
+```
+
+**Grantee Types**:
+| granteeType | Description |
+|-------------|-------------|
+| `canonical_user` | Specific user identified by `granteeId` |
+| `all_users` | All users (including anonymous), URI: `http://acs.amazonaws.com/groups/global/AllUsers` |
+| `authenticated_users` | Any authenticated user, URI: `http://acs.amazonaws.com/groups/global/AuthenticatedUsers` |
+
+**Permissions**: `FULL_CONTROL`, `WRITE`, `READ`, `READ_ACP`, `WRITE_ACP`
+
+#### 4.7 Set Bucket ACL
+
+**URL**: `PUT /api/buckets/:id/acl`
+
+**Request Header**:
+```http
+Authorization: Bearer <token>
+Content-Type: application/json
+```
+
+**Request**:
+```json
+{
+  "grants": [
+    {
+      "granteeId": "1",
+      "granteeType": "canonical_user",
+      "permission": "FULL_CONTROL"
+    },
+    {
+      "granteeType": "all_users",
+      "permission": "READ"
+    }
+  ]
+}
+```
+
+**Response**:
+```json
+{
+  "status": "ok"
+}
+```
+
+**Notes**:
+- Owner always retains `FULL_CONTROL` automatically (added if missing)
+- Duplicate grants (same grantee + permission) are deduplicated
+- Replaces all existing ACL entries atomically
+
+**Error Responses**:
+- 400 Bad Request: Invalid bucket ID or request body
+- 403 Forbidden: No permission
+- 404 Not Found: Bucket does not exist
+
+#### 4.8 Bucket Notification Management
+
+##### 4.8.1 List Bucket Notifications
+
+**URL**: `GET /api/buckets/:id/notifications`
+
+**Required Permission**: `READ` or `FULL_CONTROL` on the bucket
+
+**Request Header**:
+```http
+Authorization: Bearer <token>
+```
+
+**Response**:
+```json
+{
+  "notifications": [
+    {
+      "id": "1",
+      "bucketId": "1",
+      "url": "https://hooks.example.com/webhook",
+      "events": "s3:ObjectCreated:*",
+      "filterPrefix": "images/",
+      "filterSuffix": "",
+      "format": "native",
+      "enabled": true,
+      "retryCount": 10,
+      "retryInterval": 1,
+      "createdAt": "2025-01-01 12:00:00",
+      "lastUpdateAt": "2025-01-01 12:00:00"
+    }
+  ],
+  "total": 1
+}
+```
+
+##### 4.8.2 Create Bucket Notification
+
+**URL**: `POST /api/buckets/:id/notifications`
+
+**Required Permission**: `WRITE` or `FULL_CONTROL` on the bucket
+
+**Request**:
+```json
+{
+  "url": "https://hooks.example.com/webhook",
+  "secret": "your-hmac-secret",
+  "events": "s3:ObjectCreated:Put,s3:ObjectRemoved:Delete",
+  "filterPrefix": "images/",
+  "filterSuffix": ".jpg",
+  "format": "native",
+  "enabled": true,
+  "retryCount": 10,
+  "retryInterval": 1
+}
+```
+
+**Response** (201 Created): Returns the created notification object.
+
+##### 4.8.3 Get Notification
+
+**URL**: `GET /api/notifications/:id`
+
+**Required Permission**: `READ` or `FULL_CONTROL` on the associated bucket
+
+##### 4.8.4 Update Notification
+
+**URL**: `PUT /api/notifications/:id`
+
+**Required Permission**: `WRITE` or `FULL_CONTROL` on the associated bucket
+
+**Request**: All fields optional — only provided fields are updated.
+
+##### 4.8.5 Delete Notification
+
+**URL**: `DELETE /api/notifications/:id` or `DELETE /api/buckets/:bucketId/notifications/:notificationId`
+
+##### 4.8.6 Test Webhook
+
+**URL**: `POST /api/notifications/test`
+
+**Request**:
+```json
+{
+  "url": "https://hooks.example.com/webhook",
+  "secret": "your-hmac-secret",
+  "format": "native"
+}
+```
+
+**Response**:
+```json
+{
+  "success": true,
+  "statusCode": 200,
+  "body": "OK"
+}
+```
+
+For detailed documentation, refer to: [Notification Documentation](notification.md)
 
 ### 5. Object Management
 
@@ -698,9 +918,72 @@ Authorization: Bearer <token>
 
 **Note**: The generated presigned URL is valid for 5 minutes.
 
-### 6. Node Management
+### 6. Group Management
 
-#### 6.1 Get Node Status
+#### 6.1 List Groups
+
+**URL**: `GET /api/groups`
+
+**Request Header**:
+```http
+Authorization: Bearer <token>
+```
+
+**Response**:
+```json
+{
+  "groups": [
+    {
+      "id": "1",
+      "name": "default",
+      "defaultPolicyId": "1",
+      "createdAt": "2023-01-01 12:00:00"
+    }
+  ],
+  "total": 1
+}
+```
+
+**Notes**:
+- Super admins see all groups plus a virtual "Super Admin Group" (id=0)
+- Group admins see their own group plus groups from ACL-accessible buckets
+- Regular users see their own group plus groups from ACL-accessible buckets
+
+#### 6.2 Get Group
+
+**URL**: `GET /api/groups/:id`
+
+#### 6.3 Create Group
+
+**URL**: `POST /api/groups`
+
+**Request**:
+```json
+{
+  "name": "engineering",
+  "defaultPolicyId": 1
+}
+```
+
+#### 6.4 Update Group
+
+**URL**: `PUT /api/groups/:id`
+
+**Request**:
+```json
+{
+  "name": "engineering-v2",
+  "defaultPolicyId": 2
+}
+```
+
+#### 6.5 Delete Group
+
+**URL**: `DELETE /api/groups/:id`
+
+### 7. Node Management
+
+#### 7.1 Get Cluster Node Status
 
 **URL**: `GET /api/node/status`
 
@@ -732,7 +1015,49 @@ Authorization: Bearer <token>
 }
 ```
 
-### 7. Health Check
+#### 7.2 Get Node Taint Status
+
+**URL**: `GET /api/node-status`
+
+**Request Header**:
+```http
+Authorization: Bearer <token>
+```
+
+**Response**:
+```json
+{
+  "nodes": [
+    {
+      "nodeName": "node1",
+      "status": "active",
+      "operator": 1,
+      "lastUpdateAt": "2025-01-01 12:00:00"
+    },
+    {
+      "nodeName": "node2",
+      "status": "taint",
+      "operator": 1,
+      "lastUpdateAt": "2025-01-01 12:05:00"
+    }
+  ]
+}
+```
+
+#### 7.3 Update Node Taint Status
+
+**URL**: `PUT /api/node-status/:nodeName`
+
+**Request**:
+```json
+{
+  "status": "taint"
+}
+```
+
+**Values**: `active` (normal operation), `taint` (prevent new data writes). Requires `super_admin` role.
+
+### 8. Health Check
 
 **URL**: `GET /api/health`
 

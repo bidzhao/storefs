@@ -14,8 +14,11 @@
 - [S3 API](#s3-api)
 - [Admin API](#admin-api)
 - [s3file CLI](#s3file-cli)
+- [Gateway (NFS/SMB)](#gateway-nfssmb)
 - [Monitoring](#monitoring)
 - [MCP for AI Agent](#mcp-for-ai-agent)
+- [Notification System](#notification-system)
+- [Audit Log](#audit-log)
 - [Task System](#task-system)
 - [Quick Start](#quick-start)
 - [Technical Support](#technical-support)
@@ -42,6 +45,7 @@ This project uses Claude Code to automatically generate all codes and documentat
 - **s3file CLI**: Interactive S3FS mode for browsing objects like a local file system, with Ctrl+C cancellation support.
 - **Task Management**: Background task system for long-running administrative operations such as repairing corrupted fragments and replacing failed disks, with progress tracking and cancel support.
 - **Node Taint**: Mark nodes as taint to prevent new data writes, or activate them back — useful for node maintenance, disk replacement, or troubleshooting scenarios.
+- **Event Notifications**: Webhook-based event notifications for bucket-level object creation and deletion events. Supports configurable event types, object key prefix/suffix filters, HMAC-SHA256 signature verification, exponential backoff retry, and both native and AWS S3-compatible payload formats.
 
 ### Core Concepts
 
@@ -63,6 +67,14 @@ This project uses Claude Code to automatically generate all codes and documentat
   - Supports default retention policies automatically applied to newly uploaded objects
 
 - **Encryption**: Bucket-level AES-256-CTR encryption (default: ON). Every object uploaded to an encrypted bucket is automatically encrypted with a unique AES-256 key generated per object. Encryption can be enabled or disabled at bucket creation or update time via the management console or admin API.
+
+- **ACL**: S3-compatible bucket-level access control lists with five permissions (FULL_CONTROL, WRITE, READ, READ_ACP, WRITE_ACP) and three grantee types (CanonicalUser, AllUsers, AuthenticatedUsers). Can be managed via S3 XML API or Admin JSON API. For details, refer to: [ACL Documentation](docs/acl.md)
+
+- **Tagging**: Key-value metadata that can be attached to buckets (up to 50 tags) and objects (up to 10 tags). Tags can be used for categorization, access control, and cost tracking. Supports get/set/delete operations via S3 API, with version-aware tagging when versioning is enabled.
+
+- **S3 Select**: Allows querying structured object content (CSV and JSON) using SQL expressions without downloading the entire object. Supports SELECT, WHERE, LIMIT, aggregate functions (COUNT, SUM, AVG, MIN, MAX), and various SQL functions (SUBSTRING, TRIM, UPPER, LOWER, etc.). Also supports GZIP decompression.
+
+- **Notification**: A bucket-level webhook configuration that fires HTTP POST requests when matching object events occur. Supports two payload formats (native and AWS S3-compatible), event type filtering, object key prefix/suffix filtering, and automatic retry with exponential backoff. Notifications are persisted in a delivery queue with at-least-once delivery guarantees and 3-day TTL.
 
 - **Taint**: A node status that marks a node as unhealthy or under maintenance. Tainted nodes are excluded from new data writes and object placement, while existing data remains readable. Nodes can be manually tainted by an administrator (for maintenance or troubleshooting) or automatically tainted when all disks are full. The taint state is propagated across the cluster via gossip protocol.
 
@@ -270,6 +282,18 @@ StoreFS uses role-based access control together with user groups. A user belongs
 
 > Note: Bucket policies still control the detailed S3 actions, such as read, write, list, and delete. Roles define the management boundary and the bucket ownership scope that a user can operate on.
 
+## ACL (Access Control List)
+
+StoreFS supports S3-compatible ACLs for bucket-level permission management, providing fine-grained access control for different users. ACL defines five permissions (FULL_CONTROL, WRITE, READ, READ_ACP, WRITE_ACP) and supports three grantee types (CanonicalUser, AllUsers, AuthenticatedUsers). It can be managed via the S3 XML API (GetBucketAcl / PutBucketAcl) or the Admin JSON API.
+
+For details, refer to: [ACL Documentation](docs/acl.md)
+
+## Tagging
+
+StoreFS supports S3-compatible tagging for both buckets and objects. Tags are key-value pairs that can be used for categorization, access control, and cost tracking. Buckets support up to 50 tags and objects support up to 10 tags. Tags are version-aware when object versioning is enabled, and can be managed via the S3 XML API (GetBucketTagging / PutBucketTagging / DeleteBucketTagging). Tag behavior can be controlled during copy operations via the `x-amz-tagging-directive` header, and tags can be specified during multipart upload initialization.
+
+For details, refer to: [Tagging Documentation](docs/tagging.md)
+
 ## S3 API
 
 ### Overview
@@ -287,6 +311,10 @@ Main implemented API interfaces include:
 - **Multipart Operations**: Create multipart upload, upload part, complete multipart upload, abort multipart upload, list parts, list multipart uploads
 - **Versioning Operations**: Get bucket versioning status, set bucket versioning status
 - **Object Lock Operations**: Get bucket object lock configuration, get object retention configuration
+- **Tagging Operations**: Get/set/delete bucket tags, get/set/delete object tags (version-aware)
+- **S3 Select Operations**: Query object content with SQL (CSV/JSON input/output, GZIP decompression)
+- **ACL Operations**: Get/set bucket ACL (S3 XML API)
+- **Event Notifications**: Object creation and deletion events are automatically fired and delivered to configured webhook endpoints (see [Notification Documentation](docs/notification.md))
 
 ### Public URI Reading
 
@@ -337,9 +365,15 @@ Main implemented API interfaces include:
 - **Authentication**: Login, logout, change password
 - **User Management**: Create/delete users, modify user information, manage access keys
 - **Policy Management**: Create/delete policies, modify policy content
-- **Bucket Management**: Create/delete buckets, modify bucket attributes, list bucket contents
-- **Object Management**: Manage objects in buckets, get object metadata
-- **Node Management**: View node status, add/delete nodes
+- **Group Management**: Create/update/delete groups, configure default policies
+- **Bucket Management**: Create/delete buckets, modify bucket attributes, list bucket contents (with ACL-aware permission fields: `userPermission`, `canReadAcl`, `canWrite`)
+- **Object Management**: Manage objects in buckets, get object metadata, list object versions
+- **Multipart Management**: List, get, complete, abort multipart uploads; get part fragment info
+- **Bucket ACL Management**: Get/set bucket ACL via JSON API
+- **Bucket Notification Management**: Create/update/delete/list bucket webhook notifications, test webhook endpoints
+- **Node Management**: View node status, get taint status, update taint status
+- **Task Management**: List task types, create/cancel/cleanup background tasks
+- **Health Check**: Check cluster health status
 
 ## s3file CLI
 
@@ -360,6 +394,55 @@ s3file is a command-line tool for interacting with S3-compatible storage service
 ### Documentation
 
 For detailed documentation, please refer to: [s3file CLI Documentation](docs/s3file.md)
+
+## Gateway (NFS/SMB)
+
+### Overview
+
+StoreFS provides NFSv3 and SMB 3.1.1 protocol gateways that allow you to mount and access your S3 buckets as a standard POSIX filesystem. This enables legacy applications, file servers, and operating systems to interact with StoreFS object storage without any S3 SDK integration.
+
+### Key Features
+
+- **NFSv3 Gateway**: Full NFSv3 protocol implementation with MOUNT protocol, supporting `none`, `sys`, and `krb5` authentication
+- **SMB 3.1.1 Gateway**: Full SMB 3.1.1 protocol with SMB 2.1 backward compatibility, supporting NTLMSSP authentication and guest access
+- **Unified VFS Layer**: Both gateways share a common virtual filesystem that translates POSIX operations to S3 object operations
+- **S3 ↔ NFS/SMB Interoperability**: Data written through one protocol is immediately accessible through the others
+- **User Mapping**: NFS/SMB client identities are mapped to StoreFS users for authentication and authorization
+- **Read-Only Mode**: Both gateways can be configured as read-only exports
+- **Directory Emulation**: S3 flat namespace is presented as a hierarchical filesystem with zero-byte marker objects
+
+### Configuration Example
+
+```yaml
+gateway:
+  nfs:
+    enabled: true
+    port: 2049
+    export_path: "/"
+    auth_type: "none"
+    map_user: "user"
+  smb:
+    enabled: true
+    port: 4445
+    share_name: "storefs"
+    guest_allowed: true
+    map_user: "user"
+```
+
+### Quick Mount
+
+```bash
+# NFS mount (Linux)
+sudo mount -t nfs -o vers=3,port=2049,noresvport <storefs-host>:/ /mnt/storefs
+
+# SMB mount (Linux)
+sudo mount -t cifs //<storefs-host>:4445/storefs /mnt/storefs \
+  -o username=<user>,password=<pass>,vers=3.1.1
+```
+
+### Documentation
+
+For detailed architecture, configuration, usage, and troubleshooting information, please refer to: [Gateway (NFS/SMB) Documentation](docs/gateway.md)
 
 ## Monitoring
 
@@ -397,6 +480,46 @@ StoreFS provides an [MCP (Model Context Protocol)](https://modelcontextprotocol.
 ### Documentation
 
 For detailed information, please refer to: [MCP Server Guide](docs/mcp.md)
+
+## Notification System
+
+StoreFS provides a webhook-based event notification system that fires HTTP POST requests to configured endpoints when objects are created or deleted in a bucket. The system mirrors AWS S3 Event Notifications.
+
+### Key Features
+
+- **Real-time Events**: Object creation (PutObject, CopyObject, CompleteMultipartUpload) and deletion events are automatically detected and dispatched
+- **Configurable Event Types**: Filter by specific event types (e.g., `s3:ObjectCreated:Put`, `s3:ObjectRemoved:Delete`) or use wildcards (`s3:ObjectCreated:*`, `*`)
+- **Object Key Filtering**: Apply prefix and suffix filters to limit which objects trigger notifications
+- **Two Payload Formats**: Native (simplified StoreFS format) and AWS S3-compatible format
+- **HMAC-SHA256 Signing**: Optional secret-based payload signing for webhook endpoint verification
+- **Automatic Retry**: Failed deliveries are retried with exponential backoff (1s → 5s → 30s → 5m → 30m)
+- **Persistent Queue**: Events are queued in a database table with at-least-once delivery guarantees
+- **MCP Integration**: Create and manage notifications through natural language
+
+### Documentation
+
+For detailed information, please refer to: [Notification System Documentation](docs/notification.md)
+
+## Audit Log
+
+StoreFS provides a comprehensive audit logging system that records all administrative and S3 data operations performed on the cluster. Every API request is captured with detailed metadata including who performed the action, what resource was affected, when it happened, the client IP, the HTTP status code, and the processing duration.
+
+### Key Features
+
+- **Automatic Capture**: Every Admin API and S3 API request is automatically logged with no application changes needed
+- **Rich Metadata**: Records user identity, operation type, resource, client IP, status code, duration, request ID, and more
+- **Multiple Outputs**: Supports database (StarRocks), syslog (local/remote), and file output destinations
+- **Asynchronous Processing**: Audit entries are processed in the background via a buffered channel, never blocking request handling
+- **Batch Inserts**: Database output uses batch inserts (100 entries or 1-second window) for efficient storage
+- **Request Tracing**: Each request receives a unique `X-Request-ID` header for distributed tracing across the cluster
+- **Configurable Filters**: Exclude health checks or set minimum duration thresholds to reduce noise
+- **Automatic Cleanup**: Daily partition-based storage with configurable retention period and automatic cleanup
+- **Operation Detection**: Automatically detects 50+ Admin API operations and 30+ S3 operations from HTTP method and path
+- **Snowflake IDs**: Globally unique, time-sortable IDs for every audit entry
+
+### Documentation
+
+For detailed information, please refer to: [Audit Log Documentation](docs/auditlog.md)
 
 ## Task System
 

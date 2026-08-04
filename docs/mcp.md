@@ -112,7 +112,7 @@ You should see a success message with your role and group information.
 
 ## Feature Overview
 
-The MCP server exposes **40+ tools** organized into eight groups:
+The MCP server exposes **52+ tools** organized into nine groups:
 
 ### 1. System Tools
 
@@ -170,6 +170,17 @@ Two policy types are supported:
 | `storefs_update_bucket` | Modify bucket configuration |
 | `storefs_delete_bucket` | Delete an empty bucket |
 | `storefs_generate_presigned_url` | Generate a presigned URL for upload/download |
+| `storefs_get_bucket_acl` | Get bucket ACL (access control list) |
+| `storefs_put_bucket_acl` | Set bucket ACL — control read/write access for users |
+
+Bucket ACL grantee types:
+- **canonical_user**: A specific user (identified by user ID)
+- **all_users**: All users (including anonymous) — `http://acs.amazonaws.com/groups/global/AllUsers`
+- **authenticated_users**: Any authenticated user — `http://acs.amazonaws.com/groups/global/AuthenticatedUsers`
+
+ACL permissions: `FULL_CONTROL` | `WRITE` | `READ` | `READ_ACP` | `WRITE_ACP`
+
+> **Note:** Setting ACL replaces all existing entries atomically. Owner always retains `FULL_CONTROL` automatically.
 
 Bucket-level features you can configure:
 - **Versioning**: Track object versions (`Enabled` / `Suspended`)
@@ -199,11 +210,18 @@ Bucket-level features you can configure:
 | `storefs_s3_list_buckets` | List buckets via S3 API (shows user-accessible buckets) |
 | `storefs_s3_head_object` | Get object metadata (size, ETag, Content-Type) |
 | `storefs_s3_get_object` | View small text object content (≤1MB by default) |
-| `storefs_s3_put_object` | Upload short text content |
+| `storefs_s3_put_object` | Upload short text content (supports `tags` parameter) |
 | `storefs_s3_delete_object` | Delete an object via S3 API |
 | `storefs_s3_copy_object` | Copy an object between buckets |
-| `storefs_s3_upload_file` | Upload a local file to S3 |
+| `storefs_s3_upload_file` | Upload a local file to S3 (supports `tags` parameter) |
 | `storefs_s3_download_file` | Download an S3 object to a local file |
+| `storefs_s3_get_object_tagging` | Get object tags (supports `versionId`) |
+| `storefs_s3_put_object_tagging` | Replace all object tags (supports `versionId`) |
+| `storefs_s3_delete_object_tagging` | Delete all object tags (supports `versionId`) |
+| `storefs_s3_get_bucket_tagging` | Get bucket tags |
+| `storefs_s3_put_bucket_tagging` | Replace all bucket tags |
+| `storefs_s3_delete_bucket_tagging` | Delete all bucket tags |
+| `storefs_s3_select` | Query object content with SQL via S3 Select API (CSV/JSON) |
 
 > **Note:** S3 data operations use the current user's AccessKey/SecretKey, which are automatically retrieved after login. If the user has no keys, use `storefs_rotate_access_keys` to generate them.
 
@@ -224,6 +242,31 @@ Bucket-level features you can configure:
 Tasks are asynchronous background operations running on a specific node. Use `storefs_list_tasks` to monitor progress and `storefs_get_task` for details.
 
 For detailed documentation on the task system, repair, and replace-disk operations, see the [Task System Documentation](task.md).
+
+### 8. Notification Management Tools
+
+| Tool | Description |
+|------|-------------|
+| `storefs_list_bucket_notifications` | List all notification configs for a bucket |
+| `storefs_get_notification` | Get details of a single notification |
+| `storefs_create_notification` | Create a new webhook notification for a bucket |
+| `storefs_update_notification` | Update an existing notification config |
+| `storefs_delete_notification` | Delete a notification config |
+| `storefs_test_webhook` | Send a test event to a webhook URL to verify connectivity |
+
+Notification config fields:
+
+| Field | Description |
+|-------|-------------|
+| `url` | Webhook endpoint URL (required) |
+| `secret` | Optional HMAC-SHA256 signing secret for payload verification |
+| `events` | Comma-separated event types (default: `s3:ObjectCreated:*`) |
+| `filterPrefix` | Only fire for objects with this key prefix |
+| `filterSuffix` | Only fire for objects with this key suffix |
+| `format` | Payload format: `native` (default) or `aws` |
+| `enabled` | Enable/disable the notification |
+
+For detailed documentation, see the [Notification System Documentation](notification.md).
 
 ---
 
@@ -308,6 +351,31 @@ Upload the text "hello world" as "greeting.txt" in bucket "my-data"
 Upload the local file "/tmp/report.pdf" as "reports/report.pdf" in bucket "docs"
 Download the object "backup.tar.gz" from bucket "archive" to "/tmp/backup.tar.gz"
 Copy object "source.txt" from bucket "a" to "backups/source.txt" in bucket "b"
+Query the CSV object "data.csv" in bucket "my-data" with SQL: "SELECT * FROM S3Object WHERE age > 30"
+Query the JSON object "data.json" in bucket "my-data" with SQL: "SELECT name, age FROM S3Object"
+```
+
+### Tagging
+
+```
+Get tags on object "report.pdf" in bucket "my-data"
+Set tags on object "report.pdf" in bucket "my-data" to [{"key":"department","value":"engineering"}]
+Delete all tags on object "report.pdf" in bucket "my-data"
+Get tags on bucket "my-data"
+Set tags on bucket "my-data" to [{"key":"project","value":"storefs"}]
+Delete all tags on bucket "my-data"
+Upload a file with tags: upload "/tmp/doc.pdf" as "doc.pdf" in bucket "docs" with tags "project=storefs&department=engineering"
+```
+
+### Notifications
+
+```
+List notification configs for bucket 1
+Show details for notification 5
+Create a webhook notification for bucket 1: URL https://hooks.example.com/notify, events s3:ObjectCreated:Put
+Update notification 5 to disable it
+Delete notification 5
+Test webhook URL https://hooks.example.com/test with native format
 ```
 
 ### Maintenance & Troubleshooting

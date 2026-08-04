@@ -79,6 +79,41 @@ s3file --silent --command 'cd s3://mybucket; download remote.txt /path/to/local.
 | `--ssl` | Use SSL/TLS for connection | `false` |
 | `--no-banner` | Suppress banner display | - |
 
+## StoreFS Detection
+
+When connecting to a StoreFS server, s3file automatically detects it by checking the `X-StoreFS-Version` header in S3 API responses. This enables optimized features:
+
+### Fast Directory Listing
+
+When StoreFS is detected, `ls` uses the **Admin API** (`/api/buckets/{name}/entries`) instead of S3 `ListObjectsV2` to list directory contents. This provides significantly faster listing performance because it queries the metadata database directly rather than scanning object storage.
+
+The fast path is used automatically — no additional configuration is needed. If the Admin API is unavailable, s3file gracefully falls back to the standard S3 `ListObjectsV2` method.
+
+### Connection Info
+
+Use the `info` command to check StoreFS detection status:
+
+```
+no bucket selected> info
+────────────────────────────────────────────────────────────
+Endpoint:       http://127.0.0.1:8901
+Region:         us-east-1
+...
+StoreFS:        Detected (version v0.4.0)
+Admin API:      http://127.0.0.1:7946
+Admin API:      Connected
+────────────────────────────────────────────────────────────
+```
+
+If the server is not a StoreFS instance, it will show:
+```
+StoreFS:        Not detected
+```
+
+## Hidden Files
+
+By default, `ls` in StoreFS mode hides internal system files (names starting with `_sys_`). Use `ls --all` or `ls -a` to display all entries including system files.
+
 ## Environment Variables
 
 | Variable | Description |
@@ -312,7 +347,7 @@ Non-interactive pagination (silent mode, or `--page`/`--pageSize` flags):
 ```bash
 $ s3file
 ╔══════════════════════════════════════════════════════════════════════════╗
-║                        S3 File System CLI v0.3.9                         ║
+║                        S3 File System CLI v0.4.0                         ║
 ║      Supports StoreFS, MinIO, AWS S3, and all S3-compatible services     ║
 ╚══════════════════════════════════════════════════════════════════════════╝
 Type 'help' for available commands

@@ -487,6 +487,8 @@ Authorization: Bearer <token>
 - `pageSize`（可选）：每页数量，默认 20，最大 100
 - `sortBy`（可选）：排序字段，默认 `created_at`
 - `sortOrder`（可选）：排序顺序，`asc` 或 `desc`，默认 `desc`
+- `userId`（可选）：按用户过滤（仅超级管理员可用）
+- `groupId`（可选）：按用户组过滤（仅超级管理员和组管理员可用）
 
 **请求头**：
 ```http
@@ -505,6 +507,15 @@ Authorization: Bearer <token>
       "policyType": "replicas",
       "ownerId": "1",
       "ownerName": "admin",
+      "userPermission": "FULL_CONTROL",
+      "canReadAcl": true,
+      "canWrite": true,
+      "versioning": "Unversioned",
+      "isLocked": false,
+      "lockMode": "COMPLIANCE",
+      "retention": "30",
+      "isPublic": false,
+      "isEncrypted": true,
       "createdAt": "2023-01-01 12:00:00"
     }
   ],
@@ -513,6 +524,20 @@ Authorization: Bearer <token>
   "pageSize": 20
 }
 ```
+
+**新增字段说明**（自 v0.4.0）：
+
+| 字段 | 类型 | 说明 |
+|------|------|------|
+| `userPermission` | string | 当前用户对桶的有效 S3 权限（`FULL_CONTROL`、`READ, WRITE`、`READ` 或空） |
+| `canReadAcl` | bool | 当前用户是否可以读取桶 ACL |
+| `canWrite` | bool | 当前用户是否可以写入/删除桶中的对象 |
+| `versioning` | string | 版本控制状态：`Unversioned`、`Enabled` 或 `Suspended` |
+| `isLocked` | bool | 是否启用对象锁定 |
+| `lockMode` | string | 对象锁定模式：`COMPLIANCE` 或 `GOVERNANCE` |
+| `retention` | string | 默认保留天数 |
+| `isPublic` | bool | 是否启用公开读取 |
+| `isEncrypted` | bool | 是否启用服务端加密 |
 
 #### 4.2 获取桶详情（Get Bucket）
 
@@ -533,7 +558,18 @@ Authorization: Bearer <token>
   "policyType": "replicas",
   "ownerId": "1",
   "ownerName": "admin",
-  "createdAt": "2023-01-01 12:00:00"
+  "userPermission": "FULL_CONTROL",
+  "canReadAcl": true,
+  "canWrite": true,
+  "versioning": "Unversioned",
+  "isLocked": false,
+  "lockMode": "COMPLIANCE",
+  "retention": "30",
+  "isPublic": false,
+  "isEncrypted": true,
+  "lastUpdatedAt": "2023-01-01 12:00:00",
+  "createdAt": "2023-01-01 12:00:00",
+  "tags": []
 }
 ```
 
@@ -612,6 +648,181 @@ Authorization: Bearer <token>
 ```
 
 **说明**：只有空桶才能被删除。
+
+#### 4.6 获取桶 ACL（Get Bucket ACL）
+
+**URL**：`GET /api/buckets/:id/acl`
+
+**请求头**：
+```http
+Authorization: Bearer <token>
+```
+
+**响应**：
+```json
+{
+  "bucketId": "2081560956567031808",
+  "ownerId": "1",
+  "ownerName": "admin",
+  "grants": [
+    {
+      "id": "1",
+      "granteeId": "1",
+      "granteeName": "admin",
+      "granteeType": "canonical_user",
+      "permission": "FULL_CONTROL"
+    },
+    {
+      "granteeType": "all_users",
+      "granteeUri": "http://acs.amazonaws.com/groups/global/AllUsers",
+      "permission": "READ"
+    }
+  ]
+}
+```
+
+**授权对象类型**：
+| granteeType | 说明 |
+|-------------|------|
+| `canonical_user` | 指定用户（通过 `granteeId` 标识） |
+| `all_users` | 所有用户（含匿名），URI: `http://acs.amazonaws.com/groups/global/AllUsers` |
+| `authenticated_users` | 任意已认证用户，URI: `http://acs.amazonaws.com/groups/global/AuthenticatedUsers` |
+
+**权限**：`FULL_CONTROL`、`WRITE`、`READ`、`READ_ACP`、`WRITE_ACP`
+
+#### 4.7 设置桶 ACL（Set Bucket ACL）
+
+**URL**：`PUT /api/buckets/:id/acl`
+
+**请求头**：
+```http
+Authorization: Bearer <token>
+Content-Type: application/json
+```
+
+**请求**：
+```json
+{
+  "grants": [
+    {
+      "granteeId": "1",
+      "granteeType": "canonical_user",
+      "permission": "FULL_CONTROL"
+    },
+    {
+      "granteeType": "all_users",
+      "permission": "READ"
+    }
+  ]
+}
+```
+
+**响应**：
+```json
+{
+  "status": "ok"
+}
+```
+
+**说明**：
+- Owner 始终自动保留 `FULL_CONTROL`（请求中缺失时自动添加）
+- 重复授权（相同授权对象 + 相同权限）会自动去重
+- 设置 ACL 会原子替换所有现有 ACL 条目
+
+**错误响应**：
+- 400 Bad Request：无效的桶 ID 或请求体
+- 403 Forbidden：无权限
+- 404 Not Found：桶不存在
+
+#### 4.8 桶通知管理（Bucket Notification Management）
+
+##### 4.8.1 列出桶通知
+
+**URL**：`GET /api/buckets/:id/notifications`
+
+**所需权限**：对桶有 `READ` 权限
+
+**响应**：
+```json
+{
+  "notifications": [
+    {
+      "id": "1",
+      "bucketId": "1",
+      "url": "https://hooks.example.com/webhook",
+      "events": "s3:ObjectCreated:*",
+      "filterPrefix": "images/",
+      "filterSuffix": "",
+      "format": "native",
+      "enabled": true,
+      "retryCount": 10,
+      "retryInterval": 1,
+      "createdAt": "2025-01-01 12:00:00",
+      "lastUpdateAt": "2025-01-01 12:00:00"
+    }
+  ],
+  "total": 1
+}
+```
+
+##### 4.8.2 创建桶通知
+
+**URL**：`POST /api/buckets/:id/notifications`
+
+**所需权限**：对桶有 `WRITE` 或 `FULL_CONTROL` 权限
+
+**请求**：
+```json
+{
+  "url": "https://hooks.example.com/webhook",
+  "secret": "your-hmac-secret",
+  "events": "s3:ObjectCreated:Put,s3:ObjectRemoved:Delete",
+  "filterPrefix": "images/",
+  "filterSuffix": ".jpg",
+  "format": "native",
+  "enabled": true,
+  "retryCount": 10,
+  "retryInterval": 1
+}
+```
+
+**响应**（201 Created）：返回创建的通知对象。
+
+##### 4.8.3 获取通知
+
+**URL**：`GET /api/notifications/:id`
+
+##### 4.8.4 更新通知
+
+**URL**：`PUT /api/notifications/:id`
+
+##### 4.8.5 删除通知
+
+**URL**：`DELETE /api/notifications/:id` 或 `DELETE /api/buckets/:bucketId/notifications/:notificationId`
+
+##### 4.8.6 测试 Webhook
+
+**URL**：`POST /api/notifications/test`
+
+**请求**：
+```json
+{
+  "url": "https://hooks.example.com/webhook",
+  "secret": "your-hmac-secret",
+  "format": "native"
+}
+```
+
+**响应**：
+```json
+{
+  "success": true,
+  "statusCode": 200,
+  "body": "OK"
+}
+```
+
+详细文档请参考：[通知文档](notification_cn.md)
 
 ### 5. 对象管理（Object Management）
 
@@ -698,9 +909,59 @@ Authorization: Bearer <token>
 
 **说明**：生成的预签名 URL 有效期为 5 分钟。
 
-### 6. 节点管理（Node Management）
+### 6. 用户组管理（Group Management）
 
-#### 6.1 获取节点状态（Get Node Status）
+#### 6.1 列出用户组
+
+**URL**：`GET /api/groups`
+
+**说明**：
+- 超级管理员看到所有用户组 + 虚拟的"超级管理员组"（id=0）
+- 组管理员看到自己的组 + 通过 ACL 可访问的桶所属的组
+- 普通用户看到自己的组 + 通过 ACL 可访问的桶所属的组
+
+**响应**：
+```json
+{
+  "groups": [
+    {
+      "id": "1",
+      "name": "default",
+      "defaultPolicyId": "1",
+      "createdAt": "2023-01-01 12:00:00"
+    }
+  ],
+  "total": 1
+}
+```
+
+#### 6.2 获取用户组详情
+
+**URL**：`GET /api/groups/:id`
+
+#### 6.3 创建用户组
+
+**URL**：`POST /api/groups`
+
+**请求**：
+```json
+{
+  "name": "engineering",
+  "defaultPolicyId": 1
+}
+```
+
+#### 6.4 更新用户组
+
+**URL**：`PUT /api/groups/:id`
+
+#### 6.5 删除用户组
+
+**URL**：`DELETE /api/groups/:id`
+
+### 7. 节点管理（Node Management）
+
+#### 7.1 获取集群节点状态
 
 **URL**：`GET /api/node/status`
 
@@ -732,7 +993,44 @@ Authorization: Bearer <token>
 }
 ```
 
-### 7. 健康检查（Health Check）
+#### 7.2 获取节点污点状态
+
+**URL**：`GET /api/node-status`
+
+**响应**：
+```json
+{
+  "nodes": [
+    {
+      "nodeName": "node1",
+      "status": "active",
+      "operator": 1,
+      "lastUpdateAt": "2025-01-01 12:00:00"
+    },
+    {
+      "nodeName": "node2",
+      "status": "taint",
+      "operator": 1,
+      "lastUpdateAt": "2025-01-01 12:05:00"
+    }
+  ]
+}
+```
+
+#### 7.3 更新节点污点状态
+
+**URL**：`PUT /api/node-status/:nodeName`
+
+**请求**：
+```json
+{
+  "status": "taint"
+}
+```
+
+**可选值**：`active`（正常运行）、`taint`（阻止新数据写入）。需要 `super_admin` 角色。
+
+### 8. 健康检查（Health Check）
 
 **URL**：`GET /api/health`
 

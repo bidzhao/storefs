@@ -112,7 +112,7 @@ storefs_login(username="admin", password="your-password")
 
 ## 功能概览
 
-MCP 服务器提供 **40 多个工具**，分为八个功能组：
+MCP 服务器提供 **52 多个工具**，分为九个功能组：
 
 ### 1. 系统工具
 
@@ -171,6 +171,17 @@ MCP 服务器提供 **40 多个工具**，分为八个功能组：
 | `storefs_update_bucket` | 修改桶配置 |
 | `storefs_delete_bucket` | 删除空桶 |
 | `storefs_generate_presigned_url` | 生成用于上传/下载的预签名 URL |
+| `storefs_get_bucket_acl` | 获取桶 ACL（访问控制列表） |
+| `storefs_put_bucket_acl` | 设置桶 ACL — 控制用户的读/写访问权限 |
+
+ACL 授权对象类型：
+- **canonical_user**: 指定用户（通过用户 ID 标识）
+- **all_users**: 所有用户（含匿名）— `http://acs.amazonaws.com/groups/global/AllUsers`
+- **authenticated_users**: 任意已认证用户 — `http://acs.amazonaws.com/groups/global/AuthenticatedUsers`
+
+ACL 权限：`FULL_CONTROL` | `WRITE` | `READ` | `READ_ACP` | `WRITE_ACP`
+
+> **注意：** 设置 ACL 会原子替换所有现有条目。Owner 始终自动保留 `FULL_CONTROL`。
 
 可配置的桶级别功能：
 
@@ -201,11 +212,18 @@ MCP 服务器提供 **40 多个工具**，分为八个功能组：
 | `storefs_s3_list_buckets` | 通过 S3 API 列出用户可访问的桶 |
 | `storefs_s3_head_object` | 获取对象元数据（大小、ETag、Content-Type） |
 | `storefs_s3_get_object` | 查看小文本文件内容（默认 ≤1MB） |
-| `storefs_s3_put_object` | 上传短文本内容 |
+| `storefs_s3_put_object` | 上传短文本内容（支持 `tags` 参数） |
 | `storefs_s3_delete_object` | 通过 S3 API 删除对象 |
 | `storefs_s3_copy_object` | 在桶之间复制对象 |
-| `storefs_s3_upload_file` | 将本地文件上传到 S3 |
+| `storefs_s3_upload_file` | 将本地文件上传到 S3（支持 `tags` 参数） |
 | `storefs_s3_download_file` | 将 S3 对象下载到本地文件 |
+| `storefs_s3_get_object_tagging` | 获取对象标签（支持 `versionId`） |
+| `storefs_s3_put_object_tagging` | 替换对象的所有标签（支持 `versionId`） |
+| `storefs_s3_delete_object_tagging` | 删除对象的所有标签（支持 `versionId`） |
+| `storefs_s3_get_bucket_tagging` | 获取桶标签 |
+| `storefs_s3_put_bucket_tagging` | 替换桶的所有标签 |
+| `storefs_s3_delete_bucket_tagging` | 删除桶的所有标签 |
+| `storefs_s3_select` | 通过 S3 Select API 对对象执行 SQL 查询（支持 CSV/JSON 格式） |
 
 > **注意：** S3 数据操作使用当前用户的 AccessKey/SecretKey，登录后会自动获取。如果用户没有密钥，使用 `storefs_rotate_access_keys` 生成。
 
@@ -226,6 +244,31 @@ MCP 服务器提供 **40 多个工具**，分为八个功能组：
 任务是异步后台操作，在指定节点上执行。使用 `storefs_list_tasks` 监控进度，`storefs_get_task` 查看详情。
 
 关于任务系统、修复和替换磁盘操作的详细文档，请参考[任务系统文档](task_cn.md)。
+
+### 8. 通知管理工具
+
+| 工具 | 说明 |
+|------|------|
+| `storefs_list_bucket_notifications` | 列出桶的所有通知配置 |
+| `storefs_get_notification` | 获取单个通知详情 |
+| `storefs_create_notification` | 为桶创建新的 Webhook 通知 |
+| `storefs_update_notification` | 更新现有通知配置 |
+| `storefs_delete_notification` | 删除通知配置 |
+| `storefs_test_webhook` | 发送测试事件到 Webhook URL 验证连通性 |
+
+通知配置字段：
+
+| 字段 | 说明 |
+|------|------|
+| `url` | Webhook 端点 URL（必填） |
+| `secret` | 可选的 HMAC-SHA256 签名密钥，用于负载验证 |
+| `events` | 逗号分隔的事件类型（默认：`s3:ObjectCreated:*`） |
+| `filterPrefix` | 仅触发对象键以此前缀开头的事件 |
+| `filterSuffix` | 仅触发对象键以此后缀结尾的事件 |
+| `format` | 负载格式：`native`（默认）或 `aws` |
+| `enabled` | 启用/禁用通知 |
+
+详细文档请参考：[通知系统文档](notification_cn.md)
 
 ---
 
@@ -310,6 +353,31 @@ MCP 服务器提供 **40 多个工具**，分为八个功能组：
 将本地文件 "/tmp/report.pdf" 作为 "reports/report.pdf" 上传到桶 "docs"
 将 "backup.tar.gz" 从桶 "archive" 下载到 "/tmp/backup.tar.gz"
 将对象 "source.txt" 从桶 "a" 复制到桶 "b" 中 "backups/source.txt"
+使用 SQL 查询桶 "my-data" 中的 CSV 对象 "data.csv"："SELECT * FROM S3Object WHERE age > 30"
+使用 SQL 查询桶 "my-data" 中的 JSON 对象 "data.json"："SELECT name, age FROM S3Object"
+```
+
+### 标签管理
+
+```
+查看桶 "my-data" 中对象 "report.pdf" 的标签
+设置桶 "my-data" 中对象 "report.pdf" 的标签为 [{"key":"department","value":"engineering"}]
+删除桶 "my-data" 中对象 "report.pdf" 的所有标签
+查看桶 "my-data" 的标签
+设置桶 "my-data" 的标签为 [{"key":"project","value":"storefs"}]
+删除桶 "my-data" 的所有标签
+上传文件并添加标签：将 "/tmp/doc.pdf" 作为 "doc.pdf" 上传到桶 "docs"，标签为 "project=storefs&department=engineering"
+```
+
+### 通知管理
+
+```
+列出桶 1 的通知配置
+查看通知 5 的详细信息
+为桶 1 创建 Webhook 通知：URL https://hooks.example.com/notify，事件 s3:ObjectCreated:Put
+更新通知 5，将其禁用
+删除通知 5
+使用原生格式测试 Webhook URL https://hooks.example.com/test
 ```
 
 ### 维护与故障排查
