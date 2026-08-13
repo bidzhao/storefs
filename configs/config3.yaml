@@ -12,7 +12,8 @@ cluster:
     num: 3
     ip: "node3"
     port: 7946
-    internal_port: 17946
+    raftport: 17946
+    internal_port: 27946
     disks:
       - path: /disk1
         weight: 1

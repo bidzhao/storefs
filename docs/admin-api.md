@@ -93,6 +93,176 @@ Authorization: Bearer <token>
 }
 ```
 
+#### 1.4 Logout
+
+Logs out and revokes the current JWT token. After revocation, the token can no longer be used for subsequent requests.
+
+**URL**: `POST /api/auth/logout`
+
+**Request Header**:
+```http
+Authorization: Bearer <token>
+```
+
+**Response (200)**:
+```json
+{
+  "message": "logged out"
+}
+```
+
+**Response (401)** — Authentication required or token already expired/revoked.
+
+> Note: The `X-New-Access-Token` sliding renewal header is not issued on logout; the revoked token becomes invalid immediately on all cluster nodes.
+
+#### 1.5 MFA (Multi-Factor Authentication)
+
+MFA adds an extra layer of security using TOTP (Time-based One-Time Password). When enabled, users must provide a verification code from an authenticator app (e.g., Google Authenticator, Microsoft Authenticator) after password login.
+
+##### 1.5.1 Enable MFA Setup
+
+Generates a TOTP secret and returns a QR code URI along with backup codes. MFA is not yet active at this stage — call the verify endpoint to complete activation.
+
+**URL**: `POST /api/auth/mfa/enable`
+
+**Request Header**:
+```http
+Authorization: Bearer <token>
+```
+
+**Response**:
+```json
+{
+  "success": true,
+  "secret": "JBSWY3DPEHPK3PXP",
+  "uri": "otpauth://totp/StoreFS:mycluster:admin?secret=JBSWY3DPEHPK3PXP&issuer=StoreFS&algorithm=SHA1&digits=6&period=30",
+  "qr": "data:image/png;base64,iVBORw0KGgo...",
+  "backupCodes": ["ABCD-EFGH", "IJKL-MNOP", "QRST-UVWX", "YZ12-3456", "7890-ABCD", "EFGH-IJKL", "MNOP-QRST", "UVWX-YZ12"]
+}
+```
+
+> **Note**: The authenticator app groups the account under `StoreFS` and displays the label as `<clustername>:<username>` (e.g., `mycluster:admin`). This distinguishes accounts across different clusters.
+
+##### 1.5.2 Verify MFA Setup
+
+Verifies a TOTP code and activates MFA for the user.
+
+**URL**: `POST /api/auth/mfa/verify`
+
+**Request Header**:
+```http
+Authorization: Bearer <token>
+```
+
+**Request**:
+```json
+{
+  "code": "123456"
+}
+```
+
+**Response**:
+```json
+{
+  "success": true,
+  "message": "MFA enabled successfully",
+  "pat": "stfs_xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"
+}
+```
+
+> **Note**: A Personal Access Token (PAT) is auto-generated for programmatic access. Use the PAT instead of password for API calls that require authentication.
+
+##### 1.5.3 Get MFA Status
+
+**URL**: `GET /api/auth/mfa/status`
+
+**Request Header**:
+```http
+Authorization: Bearer <token>
+```
+
+**Response**:
+```json
+{
+  "mfaEnabled": true,
+  "backupCodeCount": 8
+}
+```
+
+##### 1.5.4 Verify Login with MFA
+
+After password login, if MFA is enabled, the login response returns `mfaRequired: true`. Use this endpoint to complete authentication with a TOTP code or backup code.
+
+**URL**: `POST /api/auth/mfa/verify-login`
+
+**Request**:
+```json
+{
+  "token": "temp_jwt_token_from_login",
+  "code": "123456"
+}
+```
+
+**Response**:
+```json
+{
+  "token": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...",
+  "user": {
+    "id": "1",
+    "name": "admin",
+    "role": "admin"
+  }
+}
+```
+
+##### 1.5.5 Disable MFA
+
+**URL**: `POST /api/auth/mfa/disable`
+
+**Request Header**:
+```http
+Authorization: Bearer <token>
+```
+
+**Request**:
+```json
+{
+  "password": "current_password"
+}
+```
+
+**Response**:
+```json
+{
+  "success": true,
+  "message": "MFA disabled successfully"
+}
+```
+
+##### 1.5.6 Recreate Backup Codes
+
+**URL**: `POST /api/auth/mfa/backup-codes`
+
+**Request Header**:
+```http
+Authorization: Bearer <token>
+```
+
+**Request**:
+```json
+{
+  "password": "current_password"
+}
+```
+
+**Response**:
+```json
+{
+  "success": true,
+  "backupCodes": ["ABCD-EFGH", "IJKL-MNOP", "..."]
+}
+```
+
 ### 2. User Management
 
 #### 2.1 List Users
@@ -246,7 +416,27 @@ Authorization: Bearer <token>
 }
 ```
 
-#### 2.7 Access Key Management
+#### 2.7 Disable MFA
+
+**Required Role**: `super_admin` (any user), `group_admin` (own group users only)
+
+**URL**: `PUT /api/users/:id/disable-mfa`
+
+**Request Header**:
+```http
+Authorization: Bearer <token>
+```
+
+**Response**:
+```json
+{
+  "message": "MFA disabled successfully"
+}
+```
+
+This endpoint disables MFA for the target user, clears the TOTP secret, and deletes all backup codes. The user will need to re-enable MFA and scan a new QR code on their next login.
+
+#### 2.8 Access Key Management
 
 ##### 2.7.1 Get User Access Keys
 
@@ -833,6 +1023,121 @@ Authorization: Bearer <token>
 
 For detailed documentation, refer to: [Notification Documentation](notification.md)
 
+#### 4.9 Bucket Lifecycle Management
+
+##### 4.9.1 Get Bucket Lifecycle Rules
+
+**URL**: `GET /api/buckets/:id/lifecycle`
+
+**Required Permission**: `READ` or `FULL_CONTROL` on the bucket
+
+**Request Header**:
+```http
+Authorization: Bearer <token>
+```
+
+**Response**:
+```json
+{
+  "rules": [
+    {
+      "id": "2087104432666841088",
+      "bucket_id": "2087104436177473536",
+      "rule_id": "ExpireLogs",
+      "status": "Enabled",
+      "filter_prefix": "logs/",
+      "expiration_days": 30
+    }
+  ]
+}
+```
+
+##### 4.9.2 Set Bucket Lifecycle Rules
+
+**URL**: `PUT /api/buckets/:id/lifecycle`
+
+**Required Permission**: `WRITE` or `FULL_CONTROL` on the bucket
+
+**Request Header**:
+```http
+Authorization: Bearer <token>
+Content-Type: application/json
+```
+
+**Request Body**:
+```json
+{
+  "rules": [
+    {
+      "rule_id": "ExpireLogs",
+      "status": "Enabled",
+      "filter_prefix": "logs/",
+      "expiration_days": 30
+    }
+  ]
+}
+```
+
+**Response**: `{"status": "ok"}`
+
+##### 4.9.3 Delete Bucket Lifecycle Rules
+
+**URL**: `DELETE /api/buckets/:id/lifecycle`
+
+**Required Permission**: `WRITE` or `FULL_CONTROL` on the bucket
+
+**Request Header**:
+```http
+Authorization: Bearer <token>
+```
+
+**Response**: `{"status": "ok"}`
+
+#### 4.10 Lifecycle Scanner Configuration
+
+Global lifecycle scanner settings. **Super admin only**.
+
+##### 4.10.1 Get Scanner Config
+
+**URL**: `GET /api/lifecycle/config`
+
+**Required Permission**: `super_admin`
+
+**Request Header**:
+```http
+Authorization: Bearer <token>
+```
+
+**Response**:
+```json
+{
+  "enabled": true,
+  "scan_interval": "1h0m0s"
+}
+```
+
+##### 4.10.2 Update Scanner Config
+
+**URL**: `PUT /api/lifecycle/config`
+
+**Required Permission**: `super_admin`
+
+**Request Header**:
+```http
+Authorization: Bearer <token>
+Content-Type: application/json
+```
+
+**Request Body**:
+```json
+{
+  "enabled": true,
+  "scan_interval": "1h"
+}
+```
+
+**Response**: `{"status": "ok"}`
+
 ### 5. Object Management
 
 #### 5.1 List Objects in Bucket
@@ -1069,6 +1374,640 @@ Authorization: Bearer <token>
 ```
 
 **Note**: This interface does not require authentication and is used for monitoring system health status.
+
+### 9. KMS Management
+
+KMS (Key Management Service) provides integration with external key management services. Currently supports the KMIP (Key Management Interoperability Protocol) standard (KMIP 1.2+), with future support planned for AWS KMS, Azure Key Vault, GCP KMS, and HashiCorp Vault. It enables SSE-KMS (Server-Side Encryption with KMS-Managed Keys) as an additional encryption mode.
+
+The system supports configuring multiple KMS services simultaneously. Each KMS service has a unique name, and KMS keys are associated with a specific KMS service via `kmsConfigId`.
+
+> **Note**: KMS management is role-aware. KMS configuration endpoints require `super_admin` role. KMS key management (create/delete/rotate) requires `super_admin` or `group_admin` (for their own group's keys). All authenticated users can view keys and check KMS health.
+
+#### 9.1 Get Primary KMS Configuration (Legacy)
+
+**URL**: `GET /api/kms/config`
+
+**Note**: This is the legacy endpoint for backward compatibility. It returns the primary (first active) KMS configuration. Use `GET /api/kms/configs` to list all configurations.
+
+**Required Role**: `super_admin`
+
+**Request Header**:
+```http
+Authorization: Bearer <token>
+```
+
+**Response**:
+```json
+{
+  "id": "1",
+  "name": "primary-kms",
+  "description": "Primary KMS server",
+  "endpoint": "192.168.1.100:5696",
+  "provider": "kmip",
+  "username": "admin",
+  "password": "****",
+  "clientCert": "****",
+  "clientKey": "****",
+  "caCert": "****",
+  "timeout": 10,
+  "healthCheckInterval": 30,
+  "allowDegradedReads": false,
+  "createdAt": "2026-01-01 12:00:00",
+  "updatedAt": "2026-01-01 12:00:00"
+}
+```
+
+**Response Fields**:
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `id` | string | KMS config ID |
+| `name` | string | Friendly config name |
+| `description` | string | Config description |
+| `endpoint` | string | KMS server address (host:port) |
+| `provider` | string | KMS provider type (`kmip`, future: `aws`, `azure`, `gcp`, `vault`) |
+| `username` | string | KMS auth username (for KMIP provider) |
+| `password` | string | KMS auth password (for KMIP provider) |
+| `clientCert` | string | TLS client certificate PEM content |
+| `clientKey` | string | TLS client key PEM content |
+| `caCert` | string | CA certificate PEM content |
+| `timeout` | int | KMS request timeout in seconds |
+| `healthCheckInterval` | int | Health check interval in seconds |
+| `allowDegradedReads` | bool | Allow reads with expired BK cache when KMS is offline |
+| `createdAt` | string | Creation timestamp |
+| `updatedAt` | string | Last update timestamp |
+
+**Error Responses**:
+- 200: Returns `{"message": "no KMS config configured"}` if no config exists
+
+#### 9.2 Update KMS Configuration
+
+**URL**: `PUT /api/kms/config`
+
+**Required Role**: `super_admin`
+
+**Request Header**:
+```http
+Authorization: Bearer <token>
+Content-Type: application/json
+```
+
+**Request Body**:
+```json
+{
+  "endpoint": "192.168.1.100:5696",
+  "provider": "kmip",
+  "username": "admin",
+  "password": "secret",
+  "clientCert": "-----BEGIN CERTIFICATE-----\n...",
+  "clientKey": "-----BEGIN PRIVATE KEY-----\n...",
+  "caCert": "-----BEGIN CERTIFICATE-----\n...",
+  "timeout": 10,
+  "healthCheckInterval": 30,
+  "allowDegradedReads": false
+}
+```
+
+**Request Fields**:
+
+| Field | Type | Required | Description |
+|-------|------|----------|-------------|
+| `endpoint` | string | Yes | KMS server address (host:port) |
+| `provider` | string | No | KMS provider type (`kmip`, future: `aws`, `azure`, `gcp`, `vault`; default: `kmip`) |
+| `providerConfig` | object | No | Provider-specific configuration as JSON object |
+| `username` | string | No | KMS auth username (for KMIP provider) |
+| `password` | string | No | KMS auth password (for KMIP provider) |
+| `clientCert` | string | No | TLS client certificate PEM content |
+| `clientKey` | string | No | TLS client key PEM content |
+| `caCert` | string | No | CA certificate PEM content |
+| `timeout` | int | No | KMS request timeout in seconds (default: 10) |
+| `healthCheckInterval` | int | No | Health check interval in seconds (default: 30) |
+| `allowDegradedReads` | bool | No | Allow reads with expired cache when KMS is offline (default: false) |
+
+**Note**: The connection is tested before saving. If the test fails, the configuration is not saved.
+
+**Response**:
+```json
+{
+  "message": "KMS config updated successfully"
+}
+```
+
+**Error Responses**:
+- 200: `{"error": "connection test failed: ..."}` if the KMS endpoint is unreachable
+- 200: `{"warning": "config saved but reconnect failed: ..."}` if saved but reconnect failed
+
+#### 9.3 List KMS Configs
+
+**URL**: `GET /api/kms/configs`
+
+**Required Role**: `super_admin`
+
+**Request Header**:
+```http
+Authorization: Bearer <token>
+```
+
+**Query Parameters**:
+- `includeInactive` (optional): Set to `true` to include inactive (soft-deleted) configs
+
+**Response**:
+```json
+{
+  "configs": [
+    {
+      "id": "1",
+      "name": "primary-kms",
+      "description": "Primary KMS server",
+      "provider": "kmip",
+      "endpoint": "192.168.1.100:5696",
+      "username": "admin",
+      "password": "****",
+      "clientCert": "****",
+      "clientKey": "****",
+      "caCert": "****",
+      "timeout": 10,
+      "healthCheckInterval": 30,
+      "allowDegradedReads": false,
+      "createdAt": "2026-01-01 12:00:00",
+      "updatedAt": "2026-01-01 12:00:00"
+    }
+  ],
+  "total": 1
+}
+```
+
+#### 9.4 Create KMS Config
+
+**URL**: `POST /api/kms/configs`
+
+**Required Role**: `super_admin`
+
+**Request Header**:
+```http
+Authorization: Bearer <token>
+Content-Type: application/json
+```
+
+**Request Body**:
+```json
+{
+  "name": "my-kms",
+  "description": "My KMS server",
+  "endpoint": "192.168.1.100:5696",
+  "provider": "kmip",
+  "username": "admin",
+  "password": "secret",
+  "clientCert": "-----BEGIN CERTIFICATE-----\n...",
+  "clientKey": "-----BEGIN PRIVATE KEY-----\n...",
+  "caCert": "-----BEGIN CERTIFICATE-----\n...",
+  "timeout": 10,
+  "healthCheckInterval": 30,
+  "allowDegradedReads": false
+}
+```
+
+**Request Fields**:
+
+| Field | Type | Required | Description |
+|-------|------|----------|-------------|
+| `name` | string | Yes | Unique config name |
+| `description` | string | No | Config description |
+| `endpoint` | string | Yes | KMS server address (host:port) |
+| `provider` | string | No | KMS provider type (`kmip`, default: `kmip`) |
+| `providerConfig` | object | No | Provider-specific configuration as JSON object |
+| `username` | string | No | KMS auth username |
+| `password` | string | No | KMS auth password |
+| `clientCert` | string | No | TLS client certificate PEM content |
+| `clientKey` | string | No | TLS client key PEM content |
+| `caCert` | string | No | CA certificate PEM content |
+| `timeout` | int | No | KMS request timeout in seconds (default: 10) |
+| `healthCheckInterval` | int | No | Health check interval in seconds (default: 30) |
+| `allowDegradedReads` | bool | No | Allow reads with expired cache when KMS is offline (default: false) |
+
+**Note**: The connection is tested before saving. If the test fails, the configuration is not saved.
+
+**Response**:
+```json
+{
+  "message": "KMS config created successfully",
+  "id": "1"
+}
+```
+
+#### 9.5 Get KMS Config by ID
+
+**URL**: `GET /api/kms/configs/{id}`
+
+**Required Role**: `super_admin`
+
+**Request Header**:
+```http
+Authorization: Bearer <token>
+```
+
+**Response**:
+```json
+{
+  "id": "1",
+  "name": "my-kms",
+  "description": "My KMS server",
+  "provider": "kmip",
+  "endpoint": "192.168.1.100:5696",
+  "username": "admin",
+  "password": "****",
+  "clientCert": "****",
+  "clientKey": "****",
+  "caCert": "****",
+  "timeout": 10,
+  "healthCheckInterval": 30,
+  "allowDegradedReads": false,
+  "createdAt": "2026-01-01 12:00:00",
+  "updatedAt": "2026-01-01 12:00:00"
+}
+```
+
+**Error Responses**:
+- 200: `{"error": "KMS config not found"}` if the config does not exist
+
+#### 9.6 Update KMS Config by ID
+
+**URL**: `PUT /api/kms/configs/{id}`
+
+**Required Role**: `super_admin`
+
+**Request Header**:
+```http
+Authorization: Bearer <token>
+Content-Type: application/json
+```
+
+**Request Body** (all fields optional — only specified fields are updated):
+```json
+{
+  "name": "my-kms-updated",
+  "description": "Updated description",
+  "endpoint": "192.168.1.101:5696",
+  "timeout": 15
+}
+```
+
+**Response**:
+```json
+{
+  "message": "KMS config updated successfully"
+}
+```
+
+#### 9.7 Delete KMS Config
+
+**URL**: `DELETE /api/kms/configs/{id}`
+
+**Required Role**: `super_admin`
+
+**Request Header**:
+```http
+Authorization: Bearer <token>
+```
+
+**Error Responses**:
+- 200: `{"error": "cannot delete KMS config: N key(s) still reference this config"}` if the config has key references
+- 200: `{"message": "KMS config deleted successfully"}` on success
+
+**Note**: Before deleting a KMS config, all KMS keys referencing it must be deleted or migrated to another config.
+
+#### 9.8 Test KMS Connection (Legacy)
+
+**URL**: `POST /api/kms/config/test`
+
+**Required Role**: `super_admin`
+
+**Request Header**:
+```http
+Authorization: Bearer <token>
+Content-Type: application/json
+```
+
+**Request Body**:
+```json
+{
+  "endpoint": "192.168.1.100:5696",
+  "provider": "kmip",
+  "username": "admin",
+  "password": "secret",
+  "clientCert": "-----BEGIN CERTIFICATE-----\n...",
+  "clientKey": "-----BEGIN PRIVATE KEY-----\n...",
+  "caCert": "-----BEGIN CERTIFICATE-----\n...",
+  "timeout": 10
+}
+```
+
+**Response**:
+```json
+{
+  "success": true,
+  "message": "KMS connection test successful"
+}
+```
+
+**Error Responses**:
+- 200: `{"success": false, "message": "..."}` if the connection test fails
+
+#### 9.9 Check KMS Health
+
+**URL**: `GET /api/kms/config/health`
+
+**Required Role**: Any authenticated user (returns only online/offline status)
+
+**Request Header**:
+```http
+Authorization: Bearer <token>
+```
+
+**Response**:
+```json
+{
+  "status": "online",
+  "provider": "kmip",
+  "endpoint": "192.168.1.100:5696",
+  "lastCheck": "2026-01-01 12:00:00"
+}
+```
+
+**Response Fields**:
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `status` | string | `online` or `offline` |
+| `provider` | string | KMS provider type (`kmip`, future: `aws`, `azure`, `gcp`, `vault`) |
+| `endpoint` | string | KMS server address |
+| `lastCheck` | string | Last health check timestamp |
+
+#### 9.10 List KMS Keys
+
+**URL**: `GET /api/kms/keys`
+
+**Required Role**: `super_admin` (sees all keys, optional `groupId` filter), `group_admin`/`user` (sees global + own group keys)
+
+**Request Parameters**:
+- `page` (optional): Page number, default 1
+- `pageSize` (optional): Number per page, default 20, max 100
+- `groupId` (optional, super_admin only): Filter by group ID
+- `showRetired` (optional, super_admin only): Set to `true` to include retired keys in the results (default: `false`)
+
+**Request Header**:
+```http
+Authorization: Bearer <token>
+```
+
+**Response**:
+```json
+{
+  "keys": [
+    {
+      "id": "1",
+      "kmsConfigId": "1",
+      "keyId": "a1b2c3d4-e5f6-7890-abcd-ef1234567890",
+      "alias": "my-cmk",
+      "description": "My first CMK",
+      "provider": "kmip",
+      "groupId": "0",
+      "groupName": "",
+      "status": "enabled",
+      "createdAt": "2026-01-01 12:00:00",
+      "updatedAt": "2026-01-01 12:00:00"
+    },
+    {
+      "id": "2",
+      "keyId": "f6e5d4c3-b2a1-0987-6543-210fedcba987",
+      "alias": "my-cmk (rotated 2026-08-06 14:30:00)",
+      "description": "My first CMK",
+      "provider": "kmip",
+      "groupId": "0",
+      "groupName": "",
+      "status": "retired",
+      "retiredAt": "2026-08-06 14:30:00",
+      "createdAt": "2026-01-01 12:00:00",
+      "updatedAt": "2026-08-06 14:30:00"
+    }
+  ],
+  "total": 2
+}
+```
+
+**Response Fields**:
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `id` | string | Database ID |
+| `keyId` | string | KMS Key Unique Identifier |
+| `alias` | string | User-friendly alias for the key |
+| `description` | string | Optional description |
+| `provider` | string | Provider type (`kmip`, future: `aws`, `azure`, `gcp`, `vault`) |
+| `groupId` | string | Group ID: "0"=global key, >"0"=group key |
+| `groupName` | string | Group display name (empty for global keys) |
+| `status` | string | Key status: `enabled`, `disabled`, `retired`, `pre-active`, `compromised`, or `destroyed` |
+| `retiredAt` | string | Retirement timestamp (present only when `status` is `retired`) |
+| `createdAt` | string | Creation timestamp |
+| `updatedAt` | string | Last update timestamp |
+
+#### 9.11 Create KMS Key
+
+**URL**: `POST /api/kms/keys`
+
+**Required Role**: `super_admin` (can create any group's key), `group_admin` (can only create keys in their own group)
+
+**Request Header**:
+```http
+Authorization: Bearer <token>
+Content-Type: application/json
+```
+
+**Request Body**:
+```json
+{
+  "alias": "my-cmk",
+  "description": "My first Customer Master Key"
+}
+```
+
+**Request Fields**:
+
+| Field | Type | Required | Description |
+|-------|------|----------|-------------|
+| `alias` | string | Yes | User-friendly alias for the key |
+| `description` | string | No | Optional description |
+| `groupId` | string | No | Group ID: "0"=global key (super_admin only), omit for group_admin to auto-assign |
+| `kmsConfigId` | string | No | KMS config ID to use (optional, defaults to primary config) |
+
+**Response**:
+```json
+{
+  "id": "1",
+  "kmsConfigId": "1",
+  "keyId": "a1b2c3d4-e5f6-7890-abcd-ef1234567890",
+  "alias": "my-cmk",
+  "description": "My first Customer Master Key",
+  "provider": "kmip",
+  "groupId": "0",
+  "groupName": "",
+  "status": "enabled",
+  "createdAt": "2026-01-01 12:00:00",
+  "updatedAt": "2026-01-01 12:00:00"
+}
+```
+
+**Error Responses**:
+- 400 Bad Request: Missing `alias`
+- 403 Forbidden: Insufficient permissions
+- 503 Service Unavailable: KMS client not initialized
+
+#### 9.12 Get KMS Key
+
+**Required Role**: Any authenticated user (only sees keys visible to their role)
+
+**URL**: `GET /api/kms/keys/{keyId}`
+
+**Request Header**:
+```http
+Authorization: Bearer <token>
+```
+
+**Response**:
+```json
+{
+  "id": "1",
+  "kmsConfigId": "1",
+  "keyId": "a1b2c3d4-e5f6-7890-abcd-ef1234567890",
+  "alias": "my-cmk",
+  "description": "My first Customer Master Key",
+  "provider": "kmip",
+  "groupId": "0",
+  "groupName": "",
+  "status": "enabled",
+  "createdAt": "2026-01-01 12:00:00",
+  "updatedAt": "2026-01-01 12:00:00"
+}
+```
+
+**Error Responses**:
+- 404 Not Found: Key does not exist
+
+#### 9.13 Update KMS Key
+
+**Required Role**: `super_admin` (any key), `group_admin` (own group keys only)
+
+**URL**: `PUT /api/kms/keys/{keyId}`
+
+**URL Parameters**:
+- `keyId`: Database ID of the KMS key
+
+**Request Header**:
+```http
+Authorization: Bearer <token>
+Content-Type: application/json
+```
+
+**Request Body**:
+```json
+{
+  "status": "disabled",
+  "description": "Updated description"
+}
+```
+
+**Request Fields**:
+
+| Field | Type | Required | Description |
+|-------|------|----------|-------------|
+| `status` | string | No | New key status: `enabled` or `disabled` (note: `retired` status can only be set by key rotation) |
+| `description` | string | No | Updated description |
+
+**Note**: When `status` is set to `disabled`, the key is revoked in KMS. When set to `enabled`, the key is re-activated.
+
+**Response**:
+```json
+{
+  "id": "1",
+  "keyId": "a1b2c3d4-e5f6-7890-abcd-ef1234567890",
+  "alias": "my-cmk",
+  "description": "Updated description",
+  "provider": "kmip",
+  "groupId": "0",
+  "groupName": "",
+  "status": "disabled",
+  "createdAt": "2026-01-01 12:00:00",
+  "updatedAt": "2026-01-01 12:00:00"
+}
+```
+
+#### 9.14 Delete KMS Key
+
+**Required Role**: `super_admin` (any key), `group_admin` (own group keys only)
+
+**URL**: `DELETE /api/kms/keys/{keyId}`
+
+**URL Parameters**:
+- `keyId`: Database ID of the KMS key
+
+**Request Header**:
+```http
+Authorization: Bearer <token>
+```
+
+**Note**: The key cannot be deleted if it is currently in use by one or more buckets. The check is performed before deletion.
+
+**Response**:
+```json
+{
+  "message": "KMS key deleted"
+}
+```
+
+**Error Responses**:
+- 409 Conflict: Key is in use by one or more buckets
+- 404 Not Found: Key does not exist
+- 503 Service Unavailable: KMS client not initialized
+
+#### 9.15 Rotate KMS Key
+
+**Required Role**: `super_admin` (any key), `group_admin` (own group keys only)
+
+**URL**: `POST /api/kms/keys/{keyId}/rotate`
+
+**URL Parameters**:
+- `keyId`: Database ID of the KMS key
+
+**Request Header**:
+```http
+Authorization: Bearer <token>
+```
+
+**Note**: Rotation creates a new version of the CMK in KMS. For the KMIP provider, this uses the `ReKey` operation. Existing objects encrypted with the previous key version remain readable. The old key's alias is updated with a timestamp suffix (e.g., `my-cmk (rotated 2026-08-06 14:30:00)`) and its status is set to `retired`. The new key inherits the original alias.
+
+**Response**:
+```json
+{
+  "message": "KMS key rotated successfully",
+  "newKey": {
+    "id": "2",
+    "kmsConfigId": "1",
+    "keyId": "b2c3d4e5-f6a7-8901-bcde-f123456789ab",
+    "alias": "my-cmk",
+    "description": "My first Customer Master Key",
+    "provider": "kmip",
+    "groupId": "0",
+    "groupName": "",
+    "status": "enabled",
+    "createdAt": "2026-08-06 14:30:00",
+    "updatedAt": "2026-08-06 14:30:00"
+  }
+}
+```
+
+**Error Responses**:
+- 404 Not Found: Key does not exist
+- 503 Service Unavailable: KMS client not initialized
 
 ## Error Response Format
 

@@ -16,6 +16,30 @@ StoreFS 实现了 Amazon S3 API 的核心功能，允许用户使用与 AWS S3 �
 
 StoreFS 使用 AWS Signature Version 4（SigV4）认证方式，需要提供访问密钥（AK）和秘密密钥（SK）。
 
+### 服务端加密
+
+StoreFS 支持三种服务端加密模式：
+
+| 模式 | 算法 | 密钥管理 | 请求头 |
+|------|------|----------|--------|
+| SSE-S3 | AES-256-CTR | StoreFS 管理（桶级别，默认开启） | `x-amz-server-side-encryption: AES256` |
+| SSE-C | AES-256-CTR | 客户端提供 | `x-amz-server-side-encryption-customer-algorithm: AES256` |
+| SSE-KMS | AES-256-CBC（通过 KMS） | 外部 KMS（当前支持 KMIP 1.2+，后续可扩展云服务） | `x-amz-server-side-encryption: aws:kms` |
+
+**SSE-KMS**（使用 KMS 管理密钥的服务端加密）使用外部 KMS 服务（当前支持 KMIP 1.2+，如 PyKMIP，后续可扩展云服务）来管理加密密钥。启用 SSE-KMS 时：
+
+- 在 KMS 服务器中创建客户主密钥（CMK）并与桶关联。
+- 每个对象的数据加密密钥（DEK）在本地生成，并由 CMK 加密保护。
+- 加密后的 DEK 存储在对象元数据中，明文 DEK 用于对象片段的 AES-256-CTR 加密。
+- 桶级别配置和密钥管理通过 [Admin API](admin-api_cn.md#9-kms-管理) 进行。
+
+**请求头**（用于 SSE-KMS 操作）：
+
+| 请求头 | 说明 |
+|--------|------|
+| `x-amz-server-side-encryption` | 必须为 `aws:kms` 表示使用 SSE-KMS |
+| `x-amz-server-side-encryption-aws-kms-key-id` | 用于加密的 KMS 密钥 ID（KMS 密钥唯一标识符） |
+
 ## 已实现的 API 接口
 
 ### 1. 桶操作（Bucket Operations）

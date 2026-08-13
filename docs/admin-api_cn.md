@@ -93,6 +93,176 @@ Authorization: Bearer <token>
 }
 ```
 
+#### 1.4 退出登录（Logout）
+
+登出并吊销当前 JWT 令牌。吊销后，该令牌将无法再用于后续请求。
+
+**URL**: `POST /api/auth/logout`
+
+**请求头**:
+```http
+Authorization: Bearer <token>
+```
+
+**响应 (200)**:
+```json
+{
+  "message": "logged out"
+}
+```
+
+**响应 (401)** — 未认证或令牌已过期/吊销。
+
+> 注意：`X-New-Access-Token` 滑动续期头在登出时不会发出；被吊销的令牌在所有集群节点上立即失效。
+
+#### 1.5 MFA（多因素认证）
+
+MFA 使用 TOTP（基于时间的一次性密码）提供额外的安全层。启用后，用户在密码登录后必须提供来自身份验证器应用（如 Google Authenticator、Microsoft Authenticator）的验证码。
+
+##### 1.5.1 开启 MFA 设置
+
+生成 TOTP 密钥并返回二维码 URI 和备用码。此时 MFA 尚未激活——需调用验证端点完成激活。
+
+**URL**：`POST /api/auth/mfa/enable`
+
+**请求头**：
+```http
+Authorization: Bearer <token>
+```
+
+**响应**：
+```json
+{
+  "success": true,
+  "secret": "JBSWY3DPEHPK3PXP",
+  "uri": "otpauth://totp/StoreFS:mycluster:admin?secret=JBSWY3DPEHPK3PXP&issuer=StoreFS&algorithm=SHA1&digits=6&period=30",
+  "qr": "data:image/png;base64,iVBORw0KGgo...",
+  "backupCodes": ["ABCD-EFGH", "IJKL-MNOP", "QRST-UVWX", "YZ12-3456", "7890-ABCD", "EFGH-IJKL", "MNOP-QRST", "UVWX-YZ12"]
+}
+```
+
+> **注意**：身份验证器应用将条目归在 `StoreFS` 分组下，标签显示为 `<集群名>:<用户名>`（例如 `mycluster:admin`）。这有助于区分不同集群的账号。
+
+##### 1.5.2 验证 MFA 设置
+
+验证 TOTP 码并激活 MFA。
+
+**URL**：`POST /api/auth/mfa/verify`
+
+**请求头**：
+```http
+Authorization: Bearer <token>
+```
+
+**请求**：
+```json
+{
+  "code": "123456"
+}
+```
+
+**响应**：
+```json
+{
+  "success": true,
+  "message": "MFA enabled successfully",
+  "pat": "stfs_xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"
+}
+```
+
+> **注意**：激活后自动生成个人访问令牌（PAT）用于程序化访问。API 调用应使用 PAT 代替密码。
+
+##### 1.5.3 获取 MFA 状态
+
+**URL**：`GET /api/auth/mfa/status`
+
+**请求头**：
+```http
+Authorization: Bearer <token>
+```
+
+**响应**：
+```json
+{
+  "mfaEnabled": true,
+  "backupCodeCount": 8
+}
+```
+
+##### 1.5.4 MFA 登录验证
+
+密码登录后，如果用户启用了 MFA，登录响应会返回 `mfaRequired: true`。使用此端点通过 TOTP 码或备用码完成认证。
+
+**URL**：`POST /api/auth/mfa/verify-login`
+
+**请求**：
+```json
+{
+  "token": "temp_jwt_token_from_login",
+  "code": "123456"
+}
+```
+
+**响应**：
+```json
+{
+  "token": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...",
+  "user": {
+    "id": "1",
+    "name": "admin",
+    "role": "admin"
+  }
+}
+```
+
+##### 1.5.5 关闭 MFA
+
+**URL**：`POST /api/auth/mfa/disable`
+
+**请求头**：
+```http
+Authorization: Bearer <token>
+```
+
+**请求**：
+```json
+{
+  "password": "current_password"
+}
+```
+
+**响应**：
+```json
+{
+  "success": true,
+  "message": "MFA disabled successfully"
+}
+```
+
+##### 1.5.6 重新生成备用码
+
+**URL**：`POST /api/auth/mfa/backup-codes`
+
+**请求头**：
+```http
+Authorization: Bearer <token>
+```
+
+**请求**：
+```json
+{
+  "password": "current_password"
+}
+```
+
+**响应**：
+```json
+{
+  "success": true,
+  "backupCodes": ["ABCD-EFGH", "IJKL-MNOP", "..."]
+}
+```
+
 ### 2. 用户管理（User Management）
 
 #### 2.1 获取用户列表（List Users）
@@ -246,7 +416,27 @@ Authorization: Bearer <token>
 }
 ```
 
-#### 2.7 管理访问密钥（Access Keys）
+#### 2.7 停用 MFA（Disable MFA）
+
+**所需角色**：`super_admin`（任何用户），`group_admin`（仅本组用户）
+
+**URL**：`PUT /api/users/:id/disable-mfa`
+
+**请求头**：
+```http
+Authorization: Bearer <token>
+```
+
+**响应**：
+```json
+{
+  "message": "MFA disabled successfully"
+}
+```
+
+此端点用于停用目标用户的 MFA，清除 TOTP 密钥并删除所有备份恢复码。该用户下次登录时需要重新启用 MFA 并扫描新的二维码。
+
+#### 2.8 管理访问密钥（Access Keys）
 
 ##### 2.7.1 获取用户访问密钥（Get Access Keys）
 
@@ -1042,6 +1232,624 @@ Authorization: Bearer <token>
 ```
 
 **说明**：此接口无需认证，用于监控系统健康状态。
+
+### 9. KMS 管理
+
+KMS（密钥管理服务）提供了与外部密钥管理服务的集成。当前支持 KMIP（密钥管理互操作协议）标准（KMIP 1.2+），后续计划支持 AWS KMS、Azure Key Vault、GCP KMS 和 HashiCorp Vault。
+
+系统支持同时配置多个 KMS 服务。每个 KMS 服务有唯一的名称，KMS 密钥通过 `kmsConfigId` 关联到特定的 KMS 服务。
+
+#### 9.1 获取主 KMS 配置（旧版）
+
+**所需角色**：`super_admin`
+
+**URL**：`GET /api/kms/config`
+
+**请求头**：
+```http
+Authorization: Bearer <token>
+```
+
+**响应**：
+```json
+{
+  "id": "1",
+  "name": "primary-kms",
+  "description": "主 KMS 服务器",
+  "endpoint": "192.168.1.100:5696",
+  "provider": "kmip",
+  "username": "admin",
+  "password": "****",
+  "clientCert": "****",
+  "clientKey": "****",
+  "caCert": "****",
+  "timeout": 10,
+  "healthCheckInterval": 30,
+  "allowDegradedReads": false,
+  "createdAt": "2026-01-01 12:00:00",
+  "updatedAt": "2026-01-01 12:00:00"
+}
+```
+
+**响应字段**：
+
+| 字段 | 类型 | 说明 |
+|------|------|------|
+| `id` | string | KMS 配置 ID |
+| `name` | string | 配置名称 |
+| `description` | string | 配置描述 |
+| `endpoint` | string | KMS 服务器地址（host:port） |
+| `provider` | string | KMS 提供商类型（`kmip`，未来支持 `aws`/`azure`/`gcp`/`vault`） |
+	| `username` | string | KMS 认证用户名（KMIP 提供商使用） |
+| `password` | string | KMS 认证密码（KMIP 提供商使用） |
+| `clientCert` | string | TLS 客户端证书 PEM 内容 |
+| `clientKey` | string | TLS 客户端密钥 PEM 内容 |
+| `caCert` | string | CA 证书 PEM 内容 |
+| `timeout` | int | KMS 请求超时时间（秒） |
+| `healthCheckInterval` | int | 健康检查间隔（秒） |
+| `allowDegradedReads` | bool | 当 KMS 离线时是否允许使用过期缓存读取 |
+| `createdAt` | string | 创建时间戳 |
+| `updatedAt` | string | 最后更新时间戳 |
+
+**错误响应**：
+- 200：如果未配置 KMS，返回 `{"message": "no KMS config configured"}`
+
+#### 9.2 更新 KMS 配置
+
+**所需角色**：`super_admin`
+
+**URL**：`PUT /api/kms/config`
+
+**请求头**：
+```http
+Authorization: Bearer <token>
+Content-Type: application/json
+```
+
+**请求体**：
+```json
+{
+  "endpoint": "192.168.1.100:5696",
+  "provider": "kmip",
+  "username": "admin",
+  "password": "secret",
+  "clientCert": "-----BEGIN CERTIFICATE-----\n...",
+  "clientKey": "-----BEGIN PRIVATE KEY-----\n...",
+  "caCert": "-----BEGIN CERTIFICATE-----\n...",
+  "timeout": 10,
+  "healthCheckInterval": 30,
+  "allowDegradedReads": false
+}
+```
+
+**请求字段**：
+
+| 字段 | 类型 | 必填 | 说明 |
+|------|------|------|------|
+| `endpoint` | string | 是 | KMS 服务器地址（host:port） |
+| `provider` | string | 否 | KMS 提供商类型（`kmip`，默认 `kmip`） |
+| `providerConfig` | object | 否 | 提供商专用配置（JSON 对象，如云 KMS 的 region 等） |
+| `username` | string | 否 | KMS 认证用户名（KMIP 提供商使用） |
+| `password` | string | 否 | KMS 认证密码（KMIP 提供商使用） |
+| `clientCert` | string | 否 | TLS 客户端证书 PEM 内容 |
+| `clientKey` | string | 否 | TLS 客户端密钥 PEM 内容 |
+| `caCert` | string | 否 | CA 证书 PEM 内容 |
+| `timeout` | int | 否 | KMS 请求超时时间（秒，默认 10） |
+| `healthCheckInterval` | int | 否 | 健康检查间隔（秒，默认 30） |
+| `allowDegradedReads` | bool | 否 | KMS 离线时允许使用过期缓存读取（默认 false） |
+
+**注意**：保存前会测试连接。如果测试失败，配置不会被保存。
+
+**响应**：
+```json
+{
+  "message": "KMS config updated successfully"
+}
+```
+
+**错误响应**：
+- 200：`{"error": "connection test failed: ..."}` 如果 KMS 端点不可达
+- 200：`{"warning": "config saved but reconnect failed: ..."}` 如果保存成功但重连失败
+
+#### 9.3 列出 KMS 配置
+
+**URL**：`GET /api/kms/configs`
+
+**所需角色**：`super_admin`
+
+**请求头**：
+```http
+Authorization: Bearer <token>
+```
+
+**查询参数**：
+- `includeInactive`（可选）：设为 `true` 包含非活跃（已软删除）的配置
+
+**响应**：
+```json
+{
+  "configs": [
+    {
+      "id": "1",
+      "name": "primary-kms",
+      "description": "主 KMS 服务器",
+      "provider": "kmip",
+      "endpoint": "192.168.1.100:5696",
+      "username": "admin",
+      "password": "****",
+      "clientCert": "****",
+      "clientKey": "****",
+      "caCert": "****",
+      "timeout": 10,
+      "healthCheckInterval": 30,
+      "allowDegradedReads": false,
+      "createdAt": "2026-01-01 12:00:00",
+      "updatedAt": "2026-01-01 12:00:00"
+    }
+  ],
+  "total": 1
+}
+```
+
+#### 9.4 创建 KMS 配置
+
+**URL**：`POST /api/kms/configs`
+
+**所需角色**：`super_admin`
+
+**请求头**：
+```http
+Authorization: Bearer <token>
+Content-Type: application/json
+```
+
+**请求体**：
+```json
+{
+  "name": "my-kms",
+  "description": "我的 KMS 服务器",
+  "endpoint": "192.168.1.100:5696",
+  "provider": "kmip",
+  "username": "admin",
+  "password": "secret",
+  "clientCert": "-----BEGIN CERTIFICATE-----\n...",
+  "clientKey": "-----BEGIN PRIVATE KEY-----\n...",
+  "caCert": "-----BEGIN CERTIFICATE-----\n...",
+  "timeout": 10,
+  "healthCheckInterval": 30,
+  "allowDegradedReads": false
+}
+```
+
+**请求字段**：
+
+| 字段 | 类型 | 必填 | 说明 |
+|------|------|------|------|
+| `name` | string | 是 | 唯一的配置名称 |
+| `description` | string | 否 | 配置描述 |
+| `endpoint` | string | 是 | KMS 服务器地址（host:port） |
+| `provider` | string | 否 | KMS 提供商类型（`kmip`，默认 `kmip`） |
+| `providerConfig` | object | 否 | 提供商专用配置（JSON 对象） |
+| `username` | string | 否 | KMS 认证用户名 |
+| `password` | string | 否 | KMS 认证密码 |
+| `clientCert` | string | 否 | TLS 客户端证书 PEM 内容 |
+| `clientKey` | string | 否 | TLS 客户端密钥 PEM 内容 |
+| `caCert` | string | 否 | CA 证书 PEM 内容 |
+| `timeout` | int | 否 | 请求超时时间（秒，默认 10） |
+| `healthCheckInterval` | int | 否 | 健康检查间隔（秒，默认 30） |
+| `allowDegradedReads` | bool | 否 | KMS 离线时允许使用过期缓存读取（默认 false） |
+
+**注意**：保存前会测试连接。如果测试失败，配置不会被保存。
+
+**响应**：
+```json
+{
+  "message": "KMS config created successfully",
+  "id": "1"
+}
+```
+
+#### 9.5 获取指定 ID 的 KMS 配置
+
+**URL**：`GET /api/kms/configs/{id}`
+
+**所需角色**：`super_admin`
+
+**请求头**：
+```http
+Authorization: Bearer <token>
+```
+
+**响应**：
+```json
+{
+  "id": "1",
+  "name": "my-kms",
+  "description": "我的 KMS 服务器",
+  "provider": "kmip",
+  "endpoint": "192.168.1.100:5696",
+  "username": "admin",
+  "password": "****",
+  "clientCert": "****",
+  "clientKey": "****",
+  "caCert": "****",
+  "timeout": 10,
+  "healthCheckInterval": 30,
+  "allowDegradedReads": false,
+  "createdAt": "2026-01-01 12:00:00",
+  "updatedAt": "2026-01-01 12:00:00"
+}
+```
+
+**错误响应**：
+- 200：`{"error": "KMS config not found"}` 如果配置不存在
+
+#### 9.6 更新指定 ID 的 KMS 配置
+
+**URL**：`PUT /api/kms/configs/{id}`
+
+**所需角色**：`super_admin`
+
+**请求体**（所有字段可选，仅更新指定字段）：
+```json
+{
+  "name": "my-kms-updated",
+  "description": "更新后的描述",
+  "endpoint": "192.168.1.101:5696",
+  "timeout": 15
+}
+```
+
+**响应**：
+```json
+{
+  "message": "KMS config updated successfully"
+}
+```
+
+#### 9.7 删除 KMS 配置
+
+**URL**：`DELETE /api/kms/configs/{id}`
+
+**所需角色**：`super_admin`
+
+**错误响应**：
+- 200：`{"error": "cannot delete KMS config: N key(s) still reference this config"}` 如果配置仍有密钥引用
+- 200：`{"message": "KMS config deleted successfully"}` 删除成功
+
+**注意**：删除 KMS 配置前，必须先删除所有引用该配置的 KMS 密钥。
+
+#### 9.8 测试 KMS 连接（旧版）
+
+**所需角色**：`super_admin`
+
+**URL**：`POST /api/kms/config/test`
+
+**请求头**：
+```http
+Authorization: Bearer <token>
+Content-Type: application/json
+```
+
+**请求体**：
+```json
+{
+  "endpoint": "192.168.1.100:5696",
+  "provider": "kmip",
+  "username": "admin",
+  "password": "secret",
+  "clientCert": "-----BEGIN CERTIFICATE-----\n...",
+  "clientKey": "-----BEGIN PRIVATE KEY-----\n...",
+  "caCert": "-----BEGIN CERTIFICATE-----\n...",
+  "timeout": 10
+}
+```
+
+**响应**：
+```json
+{
+  "success": true,
+  "message": "KMS connection test successful"
+}
+```
+
+**错误响应**：
+- 200：`{"success": false, "message": "..."}` 如果连接测试失败
+
+#### 9.9 检查 KMS 健康状态
+
+**所需角色**：任何已认证用户
+
+**URL**：`GET /api/kms/config/health`
+
+**请求头**：
+```http
+Authorization: Bearer <token>
+```
+
+**响应**：
+```json
+{
+  "status": "online",
+  "provider": "kmip",
+  "endpoint": "192.168.1.100:5696",
+  "lastCheck": "2026-01-01 12:00:00"
+}
+```
+
+**响应字段**：
+
+| 字段 | 类型 | 说明 |
+|------|------|------|
+| `status` | string | `online`（在线）或 `offline`（离线） |
+| `provider` | string | KMS 提供商类型（当前支持 `kmip`，后续可扩展） |
+| `endpoint` | string | KMS 服务器地址 |
+| `lastCheck` | string | 上次健康检查时间戳 |
+
+#### 9.10 列出 KMS 密钥
+
+**所需角色**：任何已认证用户（super_admin 可见所有密钥，普通用户可见全局密钥，group_admin 可见全局密钥 + 本组密钥）
+
+**URL**：`GET /api/kms/keys`
+
+**请求参数**：
+- `page`（可选）：页码，默认 1
+- `pageSize`（可选）：每页数量，默认 20，最大 100
+- `groupId`（可选）：按组 ID 过滤（0=全局密钥）
+- `showRetired`（可选，仅 super_admin）：设为 `true` 时包含已退役的密钥（默认 `false`）
+
+**请求头**：
+```http
+Authorization: Bearer <token>
+```
+
+**响应**：
+```json
+{
+  "keys": [
+    {
+      "id": "1",
+      "kmsConfigId": "1",
+      "keyId": "a1b2c3d4-e5f6-7890-abcd-ef1234567890",
+      "alias": "my-cmk",
+      "description": "我的第一个 CMK",
+      "provider": "kmip",
+      "groupId": "0",
+      "groupName": "",
+      "status": "enabled",
+      "createdAt": "2026-01-01 12:00:00",
+      "updatedAt": "2026-01-01 12:00:00"
+    },
+    {
+      "id": "2",
+      "kmsConfigId": "1",
+      "keyId": "f6e5d4c3-b2a1-0987-6543-210fedcba987",
+      "alias": "my-cmk (rotated 2026-08-06 14:30:00)",
+      "description": "我的第一个 CMK",
+      "provider": "kmip",
+      "groupId": "0",
+      "groupName": "",
+      "status": "retired",
+      "retiredAt": "2026-08-06 14:30:00",
+      "createdAt": "2026-01-01 12:00:00",
+      "updatedAt": "2026-08-06 14:30:00"
+    }
+  ],
+  "total": 2
+}
+```
+
+**响应字段**：
+
+| 字段 | 类型 | 说明 |
+|------|------|------|
+| `id` | string | 数据库 ID |
+| `keyId` | string | KMS 密钥唯一标识符 |
+| `alias` | string | 密钥的友好别名 |
+| `description` | string | 可选描述 |
+| `provider` | string | 提供商类型（当前支持 `kmip`，后续可扩展） |
+| `groupId` | string | 组ID："0"=全局密钥，>"0"=组密钥 |
+| `groupName` | string | 组名称（响应中自动填充，为空时表示未关联组） |
+| `status` | string | 密钥状态：`enabled`、`disabled`、`retired`、`pre-active`、`compromised` 或 `destroyed` |
+| `retiredAt` | string | 退役时间（仅当 `status` 为 `retired` 时返回） |
+| `createdAt` | string | 创建时间戳 |
+| `updatedAt` | string | 最后更新时间戳 |
+
+#### 9.11 创建 KMS 密钥
+
+**URL**：`POST /api/kms/keys`
+
+**所需角色**：`super_admin`（可以为任何组创建密钥），`group_admin`（只能在本组创建密钥）
+
+**请求头**：
+```http
+Authorization: Bearer <token>
+Content-Type: application/json
+```
+
+**请求体**：
+```json
+{
+  "alias": "my-cmk",
+  "description": "我的第一个客户主密钥",
+  "groupId": "0"
+}
+```
+
+**请求字段**：
+
+| 字段 | 类型 | 必填 | 说明 |
+|------|------|------|------|
+| `alias` | string | 是 | 密钥的友好别名 |
+| `description` | string | 否 | 可选描述 |
+| `groupId` | string | 否 | 组ID（"0"=全局密钥，默认 "0"） |
+
+**响应**：
+```json
+{
+  "id": "1",
+  "keyId": "a1b2c3d4-e5f6-7890-abcd-ef1234567890",
+  "alias": "my-cmk",
+  "description": "我的第一个客户主密钥",
+  "provider": "kmip",
+  "groupId": "0",
+  "groupName": "",
+  "status": "enabled",
+  "createdAt": "2026-01-01 12:00:00",
+  "updatedAt": "2026-01-01 12:00:00"
+}
+```
+
+**错误响应**：
+- 400 Bad Request：缺少 `alias`
+- 403 Forbidden：权限不足
+- 503 Service Unavailable：KMS 客户端未初始化
+
+#### 9.12 获取 KMS 密钥
+
+**所需角色**：任何已认证用户（仅可见自己有权限的密钥）
+
+**URL**：`GET /api/kms/keys/{keyId}`
+
+**请求头**：
+```http
+Authorization: Bearer <token>
+```
+
+**响应**：
+```json
+{
+  "id": "1",
+  "keyId": "a1b2c3d4-e5f6-7890-abcd-ef1234567890",
+  "alias": "my-cmk",
+  "description": "我的第一个客户主密钥",
+  "provider": "kmip",
+  "groupId": "0",
+  "groupName": "",
+  "status": "enabled",
+  "createdAt": "2026-01-01 12:00:00",
+  "updatedAt": "2026-01-01 12:00:00"
+}
+```
+
+**错误响应**：
+- 404 Not Found：密钥不存在
+
+#### 9.13 更新 KMS 密钥
+
+**所需角色**：`super_admin`（任何密钥），`group_admin`（仅本组密钥）
+
+**URL**：`PUT /api/kms/keys/{keyId}`
+
+**URL 参数**：
+- `keyId`：KMS 密钥的数据库 ID
+
+**请求头**：
+```http
+Authorization: Bearer <token>
+Content-Type: application/json
+```
+
+**请求体**：
+```json
+{
+  "status": "disabled",
+  "description": "更新后的描述"
+}
+```
+
+**请求字段**：
+
+| 字段 | 类型 | 必填 | 说明 |
+|------|------|------|------|
+| `status` | string | 否 | 新的密钥状态：`enabled` 或 `disabled`（注意：`retired` 状态只能通过密钥轮转设置） |
+| `description` | string | 否 | 更新后的描述 |
+
+**注意**：当 `status` 设置为 `disabled` 时，密钥在 KMS 中被吊销。设置为 `enabled` 时，密钥被重新激活。
+
+**响应**：
+```json
+{
+  "id": "1",
+  "keyId": "a1b2c3d4-e5f6-7890-abcd-ef1234567890",
+  "alias": "my-cmk",
+  "description": "更新后的描述",
+  "provider": "kmip",
+  "groupId": "0",
+  "groupName": "",
+  "status": "disabled",
+  "createdAt": "2026-01-01 12:00:00",
+  "updatedAt": "2026-01-01 12:00:00"
+}
+```
+
+#### 9.14 删除 KMS 密钥
+
+**所需角色**：`super_admin`（任何密钥），`group_admin`（仅本组密钥）
+
+**URL**：`DELETE /api/kms/keys/{keyId}`
+
+**URL 参数**：
+- `keyId`：KMS 密钥的数据库 ID
+
+**请求头**：
+```http
+Authorization: Bearer <token>
+```
+
+**注意**：如果密钥当前被一个或多个桶使用，无法删除。删除前会进行检查。
+
+**响应**：
+```json
+{
+  "message": "KMS key deleted"
+}
+```
+
+**错误响应**：
+- 409 Conflict：密钥被一个或多个桶使用
+- 404 Not Found：密钥不存在
+- 503 Service Unavailable：KMS 客户端未初始化
+
+#### 9.15 轮转 KMS 密钥
+
+**所需角色**：`super_admin`（任何密钥），`group_admin`（仅本组密钥）
+
+**URL**：`POST /api/kms/keys/{keyId}/rotate`
+
+**URL 参数**：
+- `keyId`：KMS 密钥的数据库 ID
+
+**请求头**：
+```http
+Authorization: Bearer <token>
+```
+
+**注意**：轮转操作在 KMS 中创建 CMK 的新版本（KMIP 提供商使用 `ReKey` 操作）。使用之前密钥版本加密的现有对象仍然可读。旧密钥的别名会添加时间戳后缀（如 `my-cmk (rotated 2026-08-06 14:30:00)`），状态变为 `retired`（已退役）。新密钥继承原别名。
+
+**响应**：
+```json
+{
+  "message": "KMS key rotated successfully",
+  "newKey": {
+    "id": "2",
+    "kmsConfigId": "1",
+    "keyId": "b2c3d4e5-f6a7-8901-bcde-f123456789ab",
+    "alias": "my-cmk",
+    "description": "我的第一个客户主密钥",
+    "provider": "kmip",
+    "groupId": "0",
+    "groupName": "",
+    "status": "enabled",
+    "createdAt": "2026-08-06 14:30:00",
+    "updatedAt": "2026-08-06 14:30:00"
+  }
+}
+```
+
+**错误响应**：
+- 404 Not Found：密钥不存在
+- 503 Service Unavailable：KMS 客户端未初始化
 
 ## 错误响应格式
 

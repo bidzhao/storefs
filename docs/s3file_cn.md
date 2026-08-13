@@ -99,7 +99,7 @@ no bucket selected> info
 Endpoint:       http://127.0.0.1:8901
 Region:         us-east-1
 ...
-StoreFS:        Detected (version v0.4.0)
+StoreFS:        Detected (version v0.4.1)
 Admin API:      http://127.0.0.1:7946
 Admin API:      Connected
 ────────────────────────────────────────────────────────────
@@ -346,7 +346,7 @@ connect --interactive
 ```bash
 $ s3file
 ╔══════════════════════════════════════════════════════════════════════════╗
-║                        S3 File System CLI v0.4.0                         ║
+║                        S3 File System CLI v0.4.1                         ║
 ║      Supports StoreFS, MinIO, AWS S3, and all S3-compatible services     ║
 ╚══════════════════════════════════════════════════════════════════════════╝
 Type 'help' for available commands

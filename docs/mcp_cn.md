@@ -108,11 +108,48 @@ storefs_login(username="admin", password="your-password")
 
 > **注意：** 登录状态在会话期间保持有效。使用 `storefs_logout` 退出，使用 `storefs_whoami` 查看当前用户。
 
+### 5. 启用 MFA 后的登录（使用个人访问令牌）
+
+如果用户启用了 **MFA（TOTP）**，使用密码调用 `storefs_login` 会返回 MFA 需要验证的提示。由于 MCP 是命令行工具（无法实时输入 TOTP 验证码），需要使用**个人访问令牌（PAT）**来代替密码登录：
+
+1. **创建 PAT**：在 Web 管理控制台（Profile → Personal Access Tokens）创建，或通过 Admin API：
+   ```bash
+   curl -X POST http://127.0.0.1:7946/api/auth/pat \
+     -H "Authorization: Bearer <token>" \
+     -H "Content-Type: application/json" \
+     -d '{"description": "MCP 访问", "expiresIn": "30d"}'
+   ```
+   选择过期时间（7d/30d/90d/1y/2y/5y/forever）。**PAT 仅在创建时显示一次**，请立即保存。
+
+2. **使用 PAT 登录**：
+   ```
+   storefs_login_with_pat(pat="stfs_xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx")
+   ```
+
+3. **或设置环境变量**：在 MCP 配置中指定 `STOREFS_PAT`，启动时自动加载，无需手动登录：
+   ```json
+   {
+     "mcp": {
+       "servers": {
+         "storefs": {
+           "command": "node",
+           "args": ["/path/to/mcp/index.js"],
+           "env": {
+             "STOREFS_PAT": "stfs_xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"
+           }
+         }
+       }
+     }
+   }
+   ```
+
+PAT 可以绕过 MFA，适用于程序化访问。`storefs_login_with_pat` 工具也列在下文的系统工具表中。
+
 ---
 
 ## 功能概览
 
-MCP 服务器提供 **52 多个工具**，分为九个功能组：
+MCP 服务器提供 **60+ 工具**，分为十个功能组：
 
 ### 1. 系统工具
 
@@ -120,7 +157,8 @@ MCP 服务器提供 **52 多个工具**，分为九个功能组：
 |------|------|
 | `storefs_health` | 检查集群可达性和健康状况 |
 | `storefs_login` | 使用用户名/密码认证 |
-| `storefs_logout` | 清除当前认证会话 |
+| `storefs_login_with_pat` | 使用个人访问令牌认证（绕过 MFA 验证） |
+| `storefs_logout` | 登出并在服务端吊销 JWT，然后清除本地会话 |
 | `storefs_whoami` | 显示当前登录用户信息 |
 | `storefs_cluster_status` | 列出所有节点、磁盘、使用情况及污点状态 |
 | `storefs_node_metrics` | 获取 Prometheus 指标（可选过滤） |
@@ -140,6 +178,7 @@ MCP 服务器提供 **52 多个工具**，分为九个功能组：
 | `storefs_get_access_keys` | 查看用户的 AccessKey/SecretKey |
 | `storefs_rotate_access_keys` | 重新生成密钥（旧密钥将失效） |
 | `storefs_reset_password` | 重置用户密码 |
+| `storefs_disable_user_mfa` | 停用用户 MFA（关闭双重验证并删除备份码） |
 | `storefs_list_groups` | 查询所有分组 |
 | `storefs_get_group` | 获取分组详情 |
 | `storefs_create_group` | 创建新分组 |
@@ -269,6 +308,29 @@ ACL 权限：`FULL_CONTROL` | `WRITE` | `READ` | `READ_ACP` | `WRITE_ACP`
 | `enabled` | 启用/禁用通知 |
 
 详细文档请参考：[通知系统文档](notification_cn.md)
+
+### 9. KMS 管理工具
+
+| 工具 | 说明 |
+|------|------|
+| `storefs_get_kms_config` | 获取当前 KMS 配置（端点、超时、健康检查间隔） |
+| `storefs_get_kms_config_by_id` | 获取指定 ID 的 KMS 配置 |
+| `storefs_list_kms_configs` | 列出所有 KMS 配置 |
+| `storefs_create_kms_config` | 创建新的 KMS 配置 |
+| `storefs_delete_kms_config` | 删除 KMS 配置（需先删除所有引用的密钥） |
+| `storefs_update_kms_config` | 更新 KMS 连接参数（端点、凭证、TLS 证书、超时） |
+| `storefs_test_kms_config` | 测试 KMS 连接但不保存（验证端点、TLS 和凭证） |
+| `storefs_check_kms_health` | 检查 KMS 服务健康状态（在线/离线） |
+| `storefs_list_kms_keys` | 列出所有 KMS 密钥（支持分页，可通过 `showRetired` 包含已退役密钥） |
+| `storefs_create_kms_key` | 创建新的 KMS 密钥（需提供别名和可选描述，可选 `kmsConfigId` 选择 KMS 服务） |
+| `storefs_rotate_kms_key` | 轮转 KMS 密钥（创建新密钥、退役旧密钥、重新包装所有桶密钥） |
+| `storefs_delete_kms_key` | 删除 KMS 密钥（仅当没有被任何桶使用时） |
+
+KMS 提供 **SSE-KMS**（使用 KMS 管理密钥的服务端加密）作为除 SSE-S3 和 SSE-C 之外的另一种加密模式。当桶启用 SSE-KMS 时，每个对象的数据加密密钥（DEK）由存储在外部 KMS 服务（当前支持 KMIP 1.2+，后续可扩展云服务）中的 KMS 主密钥（CMK）加密保护。
+
+密钥轮转会创建新密钥、将所有桶的 DEK 从旧 CMK 重新包装到新 CMK，并将旧密钥标记为 `retired`（已退役）。已退役密钥默认不显示在列表中——使用 `showRetired=true`（仅 super_admin）可查看。超过 90 天的已退役密钥会被自动清理。
+
+详细文档请参考：[KMS 配置](admin-api_cn.md#9-kms-管理) 的管理 API 文档。
 
 ---
 

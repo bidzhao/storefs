@@ -40,7 +40,7 @@ This project uses Claude Code to automatically generate all codes and documentat
 - **Load Balancing**: Requests are automatically distributed to available nodes
 - **Web Management Console**: Provides an intuitive web interface to manage users, policies, buckets, and objects
 - **Multi-Language Support**: Management console supports Chinese and English
-- **Security**: Supports object versioning (keeps historical versions and prevents accidental deletion), object locking (WORM model with Governance and Compliance modes), bucket-level AES-256-CTR encryption, and SSE-C (client-provided encryption keys) for data protection.
+- **Security**: Supports object versioning (keeps historical versions and prevents accidental deletion), object locking (WORM model with Governance and Compliance modes), bucket-level AES-256-CTR encryption, SSE-C (client-provided encryption keys), and SSE-KMS (external key management via KMS, currently KMIP 1.2+, with future cloud provider support) for data protection. **MFA (TOTP)**: Two-factor authentication for the admin console, with Personal Access Token (PAT) support for programmatic access.
 - **Gzip Compression**: PutObject and Multipart Upload support gzip-compressed request bodies via Content-Encoding header.
 - **s3file CLI**: Interactive S3FS mode for browsing objects like a local file system, with Ctrl+C cancellation support.
 - **Task Management**: Background task system for long-running administrative operations such as repairing corrupted fragments and replacing failed disks, with progress tracking and cancel support.
@@ -67,10 +67,15 @@ This project uses Claude Code to automatically generate all codes and documentat
   - Supports default retention policies automatically applied to newly uploaded objects
 
 - **Encryption**: Bucket-level AES-256-CTR encryption (default: ON). Every object uploaded to an encrypted bucket is automatically encrypted with a unique AES-256 key generated per object. Encryption can be enabled or disabled at bucket creation or update time via the management console or admin API.
+  - **SSE-S3**: Server-side encryption with bucket-managed keys (AES-256-CTR).
+  - **SSE-C**: Server-side encryption with client-provided encryption keys.
+  - **SSE-KMS**: Server-side encryption with an external KMS (currently KMIP 1.2+, with future cloud provider support). Supports centralized key creation, rotation, and management. Each object's data key (DEK) is wrapped by a KMS master key (CMK).
 
 - **ACL**: S3-compatible bucket-level access control lists with five permissions (FULL_CONTROL, WRITE, READ, READ_ACP, WRITE_ACP) and three grantee types (CanonicalUser, AllUsers, AuthenticatedUsers). Can be managed via S3 XML API or Admin JSON API. For details, refer to: [ACL Documentation](docs/acl.md)
 
 - **Tagging**: Key-value metadata that can be attached to buckets (up to 50 tags) and objects (up to 10 tags). Tags can be used for categorization, access control, and cost tracking. Supports get/set/delete operations via S3 API, with version-aware tagging when versioning is enabled.
+
+- **Lifecycle Management**: Automatically expire objects and delete non-current versions based on configurable rules (prefix, tags, age). Supports expiration (by days or date), noncurrent version expiration, expired delete marker cleanup, and incomplete multipart upload abort. Fully S3-compatible via the `?lifecycle` sub-resource (Get/Put/Delete). A configurable background scanner enforces the rules. The lifecycle scanner's enable/interval configuration is managed by **super_admin** only (via `/api/lifecycle/config`).
 
 - **S3 Select**: Allows querying structured object content (CSV and JSON) using SQL expressions without downloading the entire object. Supports SELECT, WHERE, LIMIT, aggregate functions (COUNT, SUM, AVG, MIN, MAX), and various SQL functions (SUBSTRING, TRIM, UPPER, LOWER, etc.). Also supports GZIP decompression.
 
@@ -82,8 +87,10 @@ This project uses Claude Code to automatically generate all codes and documentat
 
 ### Cluster Architecture
 
-A StoreFS cluster consists of multiple nodes that communicate through the gossip protocol:
+A StoreFS cluster consists of multiple nodes that communicate through the gossip protocol, with a Raft-based leader election layer for coordinating cluster-wide singleton services (audit log partition cleanup, lifecycle scanner):
 
+- **Gossip Protocol**: Node discovery, membership, and taint status propagation via HashiCorp Memberlist
+- **Raft Leader Election**: Consensus-based single leader for running cluster-wide services; loses quorum means no leader (no split-brain)
 - **Dynamic Node Management**: Supports adding/removing nodes freely without downtime
 - **Data Distribution**: Object data is distributed to multiple nodes according to policies
 - **Fault Tolerance**: Data automatically recovers when nodes fail
@@ -255,7 +262,7 @@ Visit `http://localhost:7946/console` with the default administrator account:
 
 | Function Module | Description | Screenshot |
 |----------------|-------------|---------------------|
-| User Management | Create/edit/delete users, manage access keys | [Login](docs/pics/login.jpg), [UserList](docs/pics/user.jpg), [GroupList](docs/pics/grouplist.jpg) |
+| User Management | Create/edit/delete users, manage access keys | [Login](docs/pics/login.jpg), [UserList](docs/pics/user.jpg), [GroupList](docs/pics/grouplist.jpg), [MFA](docs/pics/mfa.jpg) |
 | Policy Management | Create/edit/delete policies, configure permission rules | [PolicyList](docs/pics/policy.jpg) |
 | Bucket Management | Create/edit/delete buckets, configure access policies, toggle encryption on/off | [BucketList](docs/pics/bucket.jpg) |
 | | | [CreateVersionBucket](docs/pics/versionBucket.jpg) |
@@ -371,7 +378,8 @@ Main implemented API interfaces include:
 - **Multipart Management**: List, get, complete, abort multipart uploads; get part fragment info
 - **Bucket ACL Management**: Get/set bucket ACL via JSON API
 - **Bucket Notification Management**: Create/update/delete/list bucket webhook notifications, test webhook endpoints
-- **Node Management**: View node status, get taint status, update taint status
+- **KMS Management**: Manage multiple KMS service configurations, test KMS connections, check KMS health, create/list/update/delete/rotate KMS keys
+- **Node Management**: View node status, get taint status, update taint status, query Raft leader
 - **Task Management**: List task types, create/cancel/cleanup background tasks
 - **Health Check**: Check cluster health status
 

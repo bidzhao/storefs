@@ -108,11 +108,48 @@ You should see a success message with your role and group information.
 
 > **Note:** Login state persists for the session. Use `storefs_logout` to clear it, or `storefs_whoami` to check the current user.
 
+### 5. Login with MFA (Personal Access Token)
+
+If the user account has **MFA (TOTP)** enabled, `storefs_login` with password will return an MFA-required notice. Since MCP is a headless CLI (cannot prompt for a TOTP code), use a **Personal Access Token (PAT)** instead:
+
+1. **Create a PAT** in the web console (Profile → Personal Access Tokens), or via the Admin API:
+   ```bash
+   curl -X POST http://127.0.0.1:7946/api/auth/pat \
+     -H "Authorization: Bearer <token>" \
+     -H "Content-Type: application/json" \
+     -d '{"description": "MCP access", "expiresIn": "30d"}'
+   ```
+   Choose an expiry (7d/30d/90d/1y/2y/5y/forever). The token is **only shown once at creation** — save it immediately.
+
+2. **Log in with the PAT**:
+   ```
+   storefs_login_with_pat(pat="stfs_xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx")
+   ```
+
+3. **Or set the `STOREFS_PAT` environment variable** in the MCP server config so the PAT is loaded automatically on startup:
+   ```json
+   {
+     "mcp": {
+       "servers": {
+         "storefs": {
+           "command": "node",
+           "args": ["/path/to/mcp/index.js"],
+           "env": {
+             "STOREFS_PAT": "stfs_xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"
+           }
+         }
+       }
+     }
+   }
+   ```
+
+PATs bypass MFA and work for programmatic access. The `storefs_login_with_pat` tool is also listed in the System Tools table below.
+
 ---
 
 ## Feature Overview
 
-The MCP server exposes **52+ tools** organized into nine groups:
+The MCP server exposes **60+ tools** organized into ten groups:
 
 ### 1. System Tools
 
@@ -120,7 +157,8 @@ The MCP server exposes **52+ tools** organized into nine groups:
 |------|-------------|
 | `storefs_health` | Check cluster reachability and health |
 | `storefs_login` | Authenticate with username/password |
-| `storefs_logout` | Clear current authentication session |
+| `storefs_login_with_pat` | Authenticate with a Personal Access Token (bypasses MFA) |
+| `storefs_logout` | Logout and revoke JWT server-side, then clear local session |
 | `storefs_whoami` | Show currently logged-in user details |
 | `storefs_cluster_status` | List all nodes, their disks, usage, and taint status |
 | `storefs_node_metrics` | Fetch Prometheus metrics (with optional filter) |
@@ -140,6 +178,7 @@ The MCP server exposes **52+ tools** organized into nine groups:
 | `storefs_get_access_keys` | Show a user's AccessKey/SecretKey |
 | `storefs_rotate_access_keys` | Regenerate keys (old ones become invalid) |
 | `storefs_reset_password` | Reset a user's password |
+| `storefs_disable_user_mfa` | Disable a user's MFA (turn off 2FA and delete backup codes) |
 | `storefs_list_groups` | List all groups |
 | `storefs_get_group` | Get group details |
 | `storefs_create_group` | Create a new group |
@@ -267,6 +306,34 @@ Notification config fields:
 | `enabled` | Enable/disable the notification |
 
 For detailed documentation, see the [Notification System Documentation](notification.md).
+
+### 9. KMS Management Tools
+
+| Tool | Description |
+|------|-------------|
+| `storefs_get_kms_config` | Get current KMS configuration (endpoint, timeout, health check interval) |
+| `storefs_get_kms_config_by_id` | Get a specific KMS config by ID |
+| `storefs_list_kms_configs` | List all KMS configs |
+| `storefs_create_kms_config` | Create a new KMS config |
+| `storefs_delete_kms_config` | Delete a KMS config (remove all key references first) |
+| `storefs_update_kms_config` | Update KMS connection parameters (endpoint, credentials, TLS certs, timeout) |
+| `storefs_test_kms_config` | Test a KMS connection without saving (validates endpoint, TLS, and credentials) |
+| `storefs_check_kms_health` | Check KMS service health status (online/offline) |
+| `storefs_list_kms_keys` | List all KMS keys with pagination, supports `groupId` filter for super_admin and `showRetired` to include retired keys |
+| `storefs_create_kms_key` | Create a new KMS key (alias, optional description, optional `groupId`, optional `kmsConfigId` to select KMS service) |
+| `storefs_rotate_kms_key` | Rotate a KMS key (creates a new key, retires the old one, re-wraps all bucket keys) |
+| `storefs_delete_kms_key` | Delete a KMS key (only if not in use by any bucket) |
+
+KMS provides **SSE-KMS** (Server-Side Encryption with KMS-managed keys) as an additional encryption mode alongside SSE-S3 and SSE-C. When SSE-KMS is enabled on a bucket, each object's data encryption key (DEK) is wrapped by a KMS Customer Master Key (CMK) stored in an external KMS (currently KMIP 1.2+, with future cloud provider support).
+
+**Access Control**: KMS keys are organized into two levels:
+- **Global keys** (groupId=0): Managed by `super_admin`, visible to all users
+- **Group keys** (groupId>0): Managed by `group_admin` for their own group, visible to group members
+- **KMS configuration** is only accessible to `super_admin` (contains sensitive connection credentials)
+
+Key rotation creates a new key, re-wraps all bucket DEKs from the old CMK to the new one, and marks the old key as `retired`. Retired keys are hidden from the default listing — use `showRetired=true` (super_admin only) to view them. Expired retired keys are automatically cleaned up after 90 days.
+
+For detailed documentation, see the [KMS Configuration](admin-api.md#9-kms-management) section in the Admin API documentation.
 
 ---
 
