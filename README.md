@@ -119,7 +119,8 @@ cluster:
     num: 1                     # Node number, must be unique
     ip: 127.0.0.1              # Node IP address
     port: 7946                 # Reuse port. Admin REST API, admin web console, and node communication port (gossip protocol) all use this port
-    internal_port: 17946       # Internal port for file operations between nodes
+    raftport: 17946            # raft port, for leader election
+    internal_port: 27946       # Internal port for file operations between nodes
     disks:                     # Node disk configuration
       - path: /path/to/disk1   # Disk path
         weight: 1              # Disk weight for data distribution strategy

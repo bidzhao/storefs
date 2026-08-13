@@ -116,7 +116,8 @@ cluster:
     num: 1                     # 节点编号，必须唯一
     ip: 127.0.0.1              # 节点IP地址
     port: 7946                 # 复用端口。admin rest api，admin web console, 以及节点通信端口（gossip协议）都使用这个端口
-    internal_port: 17946       # 节点间文件操作的内部端口
+    raftport: 17946            # raft端口，用于leader选举
+    internal_port: 27946       # 节点间文件操作的内部端口
     disks:                     # 节点的磁盘配置
       - path: /path/to/disk1   # 磁盘路径
         weight: 1              # 磁盘权重，用于数据分布策略
