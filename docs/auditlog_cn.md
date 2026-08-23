@@ -239,9 +239,9 @@ audit:
 
 ## 查询审计日志
 
-### 通过 MySQL / StarRocks SQL
+### 通过 MySQL / Apache Doris SQL
 
-审计日志存储在 `audit_log` 表中。您可以直接使用 MySQL 客户端连接到 StarRocks 数据库进行查询：
+审计日志存储在 `audit_log` 表中。您可以直接使用 MySQL 客户端连接到 Apache Doris 数据库进行查询：
 
 ```sql
 -- 查找特定用户的所有操作
@@ -308,7 +308,7 @@ ORDER BY timestamp;
 
 ### 数据库（DB）输出
 
-默认且最常用的输出。条目会批量处理（最多 100 条或 1 秒窗口，以先到者为准）并批量插入到 StarRocks 的 `audit_log` 表中。
+默认且最常用的输出。条目会批量处理（最多 100 条或 1 秒窗口，以先到者为准）并批量插入到 Apache Doris 的 `audit_log` 表中。
 
 **特性：**
 - 基于日期的分区存储，便于高效查询和清理

@@ -239,9 +239,9 @@ All S3 API operations are also audited:
 
 ## Querying Audit Logs
 
-### Via MySQL / StarRocks SQL
+### Via MySQL / Apache Doris SQL
 
-Audit logs are stored in the `audit_log` table. You can query them directly using a MySQL client connected to the StarRocks database:
+Audit logs are stored in the `audit_log` table. You can query them directly using a MySQL client connected to the Apache Doris database:
 
 ```sql
 -- Find all operations by a specific user
@@ -308,7 +308,7 @@ If audit logging is enabled with the `db` output, you can view and search audit 
 
 ### Database (DB) Output
 
-The default and most common output. Entries are batched (up to 100 entries or 1-second window, whichever comes first) and bulk-inserted into the `audit_log` table in StarRocks.
+The default and most common output. Entries are batched (up to 100 entries or 1-second window, whichever comes first) and bulk-inserted into the `audit_log` table in Apache Doris.
 
 **Features:**
 - Daily partition-based storage for efficient querying and cleanup

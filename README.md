@@ -17,6 +17,7 @@
 - [Gateway (NFS/SMB)](#gateway-nfssmb)
 - [Monitoring](#monitoring)
 - [MCP for AI Agent](#mcp-for-ai-agent)
+- [Catalog Search](#catalog-search)
 - [Notification System](#notification-system)
 - [Audit Log](#audit-log)
 - [Task System](#task-system)
@@ -46,6 +47,7 @@ This project uses Claude Code to automatically generate all codes and documentat
 - **Task Management**: Background task system for long-running administrative operations such as repairing corrupted fragments and replacing failed disks, with progress tracking and cancel support.
 - **Node Taint**: Mark nodes as taint to prevent new data writes, or activate them back — useful for node maintenance, disk replacement, or troubleshooting scenarios.
 - **Event Notifications**: Webhook-based event notifications for bucket-level object creation and deletion events. Supports configurable event types, object key prefix/suffix filters, HMAC-SHA256 signature verification, exponential backoff retry, and both native and AWS S3-compatible payload formats.
+- **Catalog Search**: Full-text and vector (semantic) search across all stored objects, backed by OpenSearch. Includes hybrid search, SQL-like queries, automatic content extraction from common document formats, and permission-aware result filtering.
 
 ### Core Concepts
 
@@ -107,7 +109,7 @@ StoreFS uses a YAML format configuration file (config.yaml). Here is a detailed 
 ```yaml
 cluster:
   name: mycluster              # Cluster name, all nodes must use the same name
-  db:                          # Database configuration (using StarRocks as metadata storage)
+  db:                          # Database configuration (using Apache Doris as metadata storage)
     host: "127.0.0.1"          # Database host address
     port: 9030                 # MySQL query port
     user: "root"               # Database username
@@ -139,14 +141,14 @@ cluster:
 
 #### Step 1: Deploy Database
 
-StoreFS uses StarRocks as metadata storage, so StarRocks needs to be deployed first:
+StoreFS uses Apache Doris as metadata storage, so Apache Doris needs to be deployed first:
 
 ```bash
-# Download and start StarRocks (single-node deployment)
-url: https://www.starrocks.io/download/community/index.html
+# Download and start Apache Doris (single-node deployment)
+url: https://doris.apache.org/download/
 
-tar -xzf StarRocks-<versiion>.tar.gz
-cd StarRocks-<version>
+tar -xzf apache-doris-<versiion>-bin-x86_64.tar.gz
+cd apache-doris-<version>-bin-x86_64
 
 # Start FE (Frontend)
 ./fe/bin/start_fe.sh --daemon
@@ -214,7 +216,7 @@ docker-compose up -d
 ```
 
 Docker Compose will automatically start:
-- 1 StarRocks database container
+- 1 Apache Doris database container
 - 3 StoreFS node containers
 - Port mapping: node1(7946/8901), node2(7947/8902), node3(7948/8903)
 
@@ -490,6 +492,31 @@ StoreFS provides an [MCP (Model Context Protocol)](https://modelcontextprotocol.
 
 For detailed information, please refer to: [MCP Server Guide](docs/mcp.md)
 
+## Catalog Search
+
+StoreFS provides a **Catalog** feature that enables full-text and vector (semantic) search across all objects stored in the cluster, backed by OpenSearch.
+
+### Key Features
+
+- **Full-Text Search**: Weighted search across object name (3×), content text, tags, metadata, and content type
+- **Vector (k-NN) Search**: Semantic similarity search using OpenSearch's k-NN plugin (HNSW, cosine similarity)
+- **Hybrid Search**: Combines full-text and vector search via Reciprocal Rank Fusion (RRF) for best results
+- **SQL-Like Search**: Query with simple SQL syntax, e.g., `SELECT * WHERE tag='key:value' AND size>=1000`
+- **Content Extraction**: Automatically extracts text from PDF, DOCX, XLSX, HTML, EPUB, MOBI, plain text, audio (Whisper), and video/image (vision LLM)
+- **Permission-Aware**: Search results are automatically filtered by the user's bucket permissions
+- **MCP Integration**: Search the catalog through natural language
+
+### Architecture
+
+The catalog consists of three components:
+- **Catalog Engine**: Built into the StoreFS server — queries OpenSearch and validates result freshness
+- **CatalogBuilder**: A standalone program that scans the metadata database, extracts content, generates embeddings, and indexes documents into OpenSearch. Supports horizontal scaling.
+- **OpenSearch**: Multi-node search backend with k-NN plugin
+
+### Documentation
+
+For detailed information, please refer to: [Catalog Search Documentation](docs/catalog.md)
+
 ## Notification System
 
 StoreFS provides a webhook-based event notification system that fires HTTP POST requests to configured endpoints when objects are created or deleted in a bucket. The system mirrors AWS S3 Event Notifications.
@@ -517,7 +544,7 @@ StoreFS provides a comprehensive audit logging system that records all administr
 
 - **Automatic Capture**: Every Admin API and S3 API request is automatically logged with no application changes needed
 - **Rich Metadata**: Records user identity, operation type, resource, client IP, status code, duration, request ID, and more
-- **Multiple Outputs**: Supports database (StarRocks), syslog (local/remote), and file output destinations
+- **Multiple Outputs**: Supports database (Apache Doris), syslog (local/remote), and file output destinations
 - **Asynchronous Processing**: Audit entries are processed in the background via a buffered channel, never blocking request handling
 - **Batch Inserts**: Database output uses batch inserts (100 entries or 1-second window) for efficient storage
 - **Request Tracing**: Each request receives a unique `X-Request-ID` header for distributed tracing across the cluster

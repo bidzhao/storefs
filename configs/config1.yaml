@@ -1,7 +1,7 @@
 cluster:
   name: mycluster
   db:
-    host: "db"
+    host: "doris-fe"
     port: 9030
     user: "root"
     password: ""

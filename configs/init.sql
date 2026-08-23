@@ -1,7 +1,4 @@
-ADMIN SET FRONTEND CONFIG ("enable_experimental_gin" = "true");
-SET GLOBAL new_planner_optimize_timeout = 60000;
-
-CREATE DATABASE mydb;
+CREATE DATABASE IF NOT EXISTS mydb;
 USE mydb;
 
 CREATE TABLE IF NOT EXISTS policies
@@ -13,11 +10,17 @@ CREATE TABLE IF NOT EXISTS policies
     data_shards   INT,
     parity_shards INT,
     created_at    DATETIME DEFAULT CURRENT_TIMESTAMP,
-    INDEX index_policies_name (name) USING GIN
-) PRIMARY KEY(id)
-DISTRIBUTED BY HASH(id) BUCKETS 3
+    INDEX index_policies_name (name) USING INVERTED
+)
+ENGINE=OLAP
+UNIQUE KEY (id)
+DISTRIBUTED BY HASH(id) BUCKETS 64
 PROPERTIES (
-    "replication_num" = "1"
+    "replication_num" = "1",
+    "enable_unique_key_merge_on_write" = "true",
+    "group_commit_mode" = "sync_mode",
+    "group_commit_interval_ms" = "10",
+    "group_commit_data_bytes" = "67108864"
 );
 
 CREATE TABLE IF NOT EXISTS user_groups
@@ -26,12 +29,18 @@ CREATE TABLE IF NOT EXISTS user_groups
     name              VARCHAR(128) NOT NULL COMMENT 'group name (unique)',
     default_policy_id BIGINT COMMENT 'default policy id for this group',
     created_at        DATETIME DEFAULT CURRENT_TIMESTAMP COMMENT 'create time',
-    INDEX index_user_groups_default_policy_id (default_policy_id) USING BITMAP,
-    INDEX index_user_groups_name (name) USING GIN
-) PRIMARY KEY (id)
-DISTRIBUTED BY HASH(id) BUCKETS 3
+    INDEX index_user_groups_default_policy_id (default_policy_id) USING INVERTED,
+    INDEX index_user_groups_name (name) USING INVERTED
+)
+ENGINE=OLAP
+UNIQUE KEY (id)
+DISTRIBUTED BY HASH(id) BUCKETS 32
 PROPERTIES (
-    "replication_num" = "1"
+    "replication_num" = "1",
+    "enable_unique_key_merge_on_write" = "true",
+    "group_commit_mode" = "sync_mode",
+    "group_commit_interval_ms" = "10",
+    "group_commit_data_bytes" = "67108864"
 );
 
 CREATE TABLE IF NOT EXISTS users
@@ -41,22 +50,27 @@ CREATE TABLE IF NOT EXISTS users
     password             VARCHAR(256) NOT NULL COMMENT 'hashed password',
     accesskey            VARCHAR(64)  NOT NULL COMMENT 'access key for API',
     secretkey            VARCHAR(64)  NOT NULL COMMENT 'secret key for API',
-    role                 VARCHAR(32)  NOT NULL COMMENT 'user role: user / group_admin / super_admin',
+    mfa_secret           VARCHAR(512)          DEFAULT ''  COMMENT 'encrypted TOTP secret (AES-256-GCM)',
+    mfa_enabled          BOOLEAN      NOT NULL DEFAULT '0' COMMENT 'MFA enabled flag',
+    urole                VARCHAR(32)  NOT NULL COMMENT 'user role: user / group_admin / super_admin',
     group_id             BIGINT       NOT NULL COMMENT 'associated group id',
     must_change_password BOOLEAN      NOT NULL DEFAULT '0' COMMENT 'must change password on next login',
     bypass               BOOLEAN      NOT NULL DEFAULT '0' COMMENT 'IAM s3:BypassGovernanceRetention',
-    mfa_secret           VARCHAR(512) NOT NULL DEFAULT '' COMMENT 'encrypted TOTP secret (AES-256-GCM)',
-    mfa_enabled          BOOLEAN      NOT NULL DEFAULT '0' COMMENT 'MFA enabled flag',
     created_at           DATETIME              DEFAULT CURRENT_TIMESTAMP COMMENT 'create time',
-    INDEX index_users_group_id (group_id) USING BITMAP,
-    INDEX index_users_name (name) USING GIN,
-    INDEX index_users_accesskey (accesskey) USING GIN,
-    INDEX index_users_role (role) USING BITMAP
-) PRIMARY KEY (id)
-DISTRIBUTED BY HASH(id) BUCKETS 3
+    INDEX index_users_group_id (group_id) USING INVERTED,
+    INDEX index_users_name (name) USING INVERTED,
+    INDEX index_users_accesskey (accesskey) USING INVERTED,
+    INDEX index_users_urole (urole) USING INVERTED
+)
+ENGINE=OLAP
+UNIQUE KEY (id)
+DISTRIBUTED BY HASH(id) BUCKETS 64
 PROPERTIES (
-    "enable_persistent_index" = "true",
-    "replication_num" = "1"
+    "replication_num" = "1",
+    "enable_unique_key_merge_on_write" = "true",
+    "group_commit_mode" = "sync_mode",
+    "group_commit_interval_ms" = "10",
+    "group_commit_data_bytes" = "67108864"
 );
 
 CREATE TABLE IF NOT EXISTS buckets
@@ -78,42 +92,19 @@ CREATE TABLE IF NOT EXISTS buckets
     is_public        BOOLEAN      NOT NULL DEFAULT '0' COMMENT 'public bucket flag',
     last_update_at   DATETIME              DEFAULT CURRENT_TIMESTAMP COMMENT 'last update time',
     created_at       DATETIME              DEFAULT CURRENT_TIMESTAMP COMMENT 'create time',
-    INDEX index_buckets_name (name) USING GIN,
-    INDEX index_buckets_policy_id (policy_id) USING BITMAP,
-    INDEX index_buckets_owner_id (owner_id) USING BITMAP,
-    INDEX index_buckets_encryption_type (encryption_type) USING BITMAP
-) PRIMARY KEY (id)
-DISTRIBUTED BY HASH(id) BUCKETS 3 PROPERTIES (
-    "enable_persistent_index" = "true",
-    "replication_num" = "1"
+    INDEX index_buckets_name (name) USING INVERTED,
+    INDEX index_buckets_policy_id (policy_id) USING INVERTED,
+    INDEX index_buckets_owner_id (owner_id) USING INVERTED,
+    INDEX index_buckets_encryption_type (encryption_type) USING INVERTED
+)
+ENGINE=OLAP
+UNIQUE KEY (id)
+DISTRIBUTED BY HASH(id) BUCKETS 64 PROPERTIES (    "replication_num" = "1",
+    "enable_unique_key_merge_on_write" = "true",
+    "group_commit_mode" = "sync_mode",
+    "group_commit_interval_ms" = "10",
+    "group_commit_data_bytes" = "67108864"
 );
-
-CREATE TABLE IF NOT EXISTS bucket_tags
-(
-    bucket_id            BIGINT       NOT NULL,
-    tag_key              VARCHAR(128) NOT NULL,
-    tag_value            VARCHAR(256) NOT NULL,
-    normalized_tag_key   VARCHAR(128) NOT NULL COMMENT 'lowercase for case-insensitive search',
-    normalized_tag_value VARCHAR(256) NOT NULL COMMENT 'lowercase for case-insensitive search',
-    created_at           DATETIME     NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    INDEX index_bucket_tags_key (tag_key) USING BITMAP,
-    INDEX index_bucket_tags_normalized_key (normalized_tag_key) USING GIN
-) PRIMARY KEY (bucket_id, tag_key)
-DISTRIBUTED BY HASH(bucket_id) BUCKETS 3
-PROPERTIES ("compression" = "zstd", "replication_num" = "1");
-
-CREATE TABLE IF NOT EXISTS bucket_acls
-(
-    id            BIGINT       NOT NULL COMMENT 'ACL entry unique id (generated by GenerateID)',
-    bucket_id     BIGINT       NOT NULL COMMENT 'bucket id',
-    grantee       VARCHAR(256) NOT NULL COMMENT 'grantee identifier: user ID for canonical_user, or URI for AllUsers/AuthenticatedUsers',
-    grantee_type  VARCHAR(32)  NOT NULL COMMENT 'grantee type: canonical_user | all_users | authenticated_users',
-    permission    VARCHAR(32)  NOT NULL COMMENT 'S3 permission: FULL_CONTROL | WRITE | READ | READ_ACP | WRITE_ACP',
-    created_at    DATETIME     NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    INDEX index_bucket_acls_bucket_id (bucket_id) USING BITMAP
-) PRIMARY KEY (id)
-DISTRIBUTED BY HASH(id) BUCKETS 3
-PROPERTIES ("replication_num" = "1");
 
 CREATE TABLE IF NOT EXISTS object_md
 (
@@ -137,23 +128,29 @@ CREATE TABLE IF NOT EXISTS object_md
     lifecycle_expiration_time DATETIME COMMENT 'lifecycle expiration time (independent of lock expiration_time)',
     created_at       DATETIME      NOT NULL DEFAULT CURRENT_TIMESTAMP COMMENT 'create time',
     status           VARCHAR(32)   NOT NULL DEFAULT 'pending' COMMENT 'write status: pending/completed/failure/interrupted',
-    INDEX index_object_md_object_name (object_name) USING GIN,
-    INDEX index_object_md_status (status) USING BITMAP,
-    INDEX index_object_md_encryption_mode (encryption_mode) USING BITMAP
-) PRIMARY KEY (bucket_id, obj_name_hash, object_name)
-DISTRIBUTED BY HASH(bucket_id) BUCKETS 32 PROPERTIES (
-    "compression" = "zstd",
-    "enable_persistent_index" = "true",
-    "bloom_filter_columns" = "id",
-    "replication_num" = "1"
+    catalog_processed BOOLEAN      NOT NULL DEFAULT '0' COMMENT 'catalog indexing status: 0=not processed, 1=processed',
+    INDEX index_object_md_object_name (object_name) USING INVERTED,
+    INDEX index_object_md_status (status) USING INVERTED,
+    INDEX index_object_md_encryption_mode (encryption_mode) USING INVERTED,
+    INDEX index_object_md_write_time (write_time) USING INVERTED
+)
+ENGINE=OLAP
+UNIQUE KEY (bucket_id, obj_name_hash, object_name)
+DISTRIBUTED BY HASH(bucket_id) BUCKETS 128 PROPERTIES (
+    "compression" = "zstd",    "bloom_filter_columns" = "id",
+    "replication_num" = "1",
+    "enable_unique_key_merge_on_write" = "true",
+    "group_commit_mode" = "sync_mode",
+    "group_commit_interval_ms" = "20",
+    "group_commit_data_bytes" = "67108864"
 );
 
 CREATE TABLE IF NOT EXISTS object_v_md
 (
     bucket_id       BIGINT        NOT NULL COMMENT 'bucket id',
-    obj_name_hash LARGEINT NOT NULL COMMENT 'hash of object name, to accelarate searching',
+    obj_name_hash   LARGEINT      NOT NULL COMMENT 'hash of object name, to accelarate searching',
     object_name     VARCHAR(1024) NOT NULL COMMENT 'object name',
-    version         VARCHAR(36) COMMENT 'version (uuid)',
+    version         VARCHAR(36)   COMMENT 'version (uuid)',
     is_latest       BOOLEAN       NOT NULL DEFAULT '0' COMMENT 'is latest version',
     is_deleted      BOOLEAN       NOT NULL DEFAULT '0' COMMENT 'delete marker',
     policy_id       BIGINT        NOT NULL COMMENT 'policy id',
@@ -171,33 +168,20 @@ CREATE TABLE IF NOT EXISTS object_v_md
     lifecycle_expiration_time DATETIME COMMENT 'lifecycle expiration time (independent of lock expiration_time)',
     created_at      DATETIME      NOT NULL DEFAULT CURRENT_TIMESTAMP COMMENT 'create time',
     status          VARCHAR(32)   NOT NULL DEFAULT 'pending' COMMENT 'write status: pending/completed/failure/interrupted',
-    INDEX index_object_v_md_object_name (object_name) USING GIN,
-    INDEX index_object_v_md_encryption_mode (encryption_mode) USING BITMAP,
-    INDEX index_object_v_md_status (status) USING BITMAP
-) PRIMARY KEY (bucket_id, obj_name_hash, object_name, version)
-DISTRIBUTED BY HASH(bucket_id) BUCKETS 32 PROPERTIES (
-    "compression" = "zstd",
-    "enable_persistent_index" = "true",
-    "bloom_filter_columns" = "id",
-    "replication_num" = "1"
+    INDEX index_object_v_md_object_name (object_name) USING INVERTED,
+    INDEX index_object_v_md_encryption_mode (encryption_mode) USING INVERTED,
+    INDEX index_object_v_md_status (status) USING INVERTED
+)
+ENGINE=OLAP
+UNIQUE KEY (bucket_id, obj_name_hash, object_name, version)
+DISTRIBUTED BY HASH(bucket_id) BUCKETS 128 PROPERTIES (
+    "compression" = "zstd",    "bloom_filter_columns" = "id",
+    "replication_num" = "1",
+    "enable_unique_key_merge_on_write" = "true",
+    "group_commit_mode" = "sync_mode",
+    "group_commit_interval_ms" = "20",
+    "group_commit_data_bytes" = "67108864"
 );
-
-CREATE TABLE IF NOT EXISTS object_tags
-(
-    bucket_id            BIGINT        NOT NULL,
-    obj_name_hash        LARGEINT      NOT NULL,
-    object_name          VARCHAR(1024) NOT NULL,
-    version              VARCHAR(36)   NOT NULL DEFAULT 'null',
-    tag_key              VARCHAR(128)  NOT NULL,
-    tag_value            VARCHAR(256)  NOT NULL,
-    normalized_tag_key   VARCHAR(128)  NOT NULL COMMENT 'lowercase for case-insensitive search',
-    normalized_tag_value VARCHAR(256)  NOT NULL COMMENT 'lowercase for case-insensitive search',
-    created_at           DATETIME      NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    INDEX index_object_tags_key (tag_key) USING BITMAP,
-    INDEX index_object_tags_normalized_key (normalized_tag_key) USING GIN
-) PRIMARY KEY (bucket_id, obj_name_hash, object_name, version, tag_key)
-DISTRIBUTED BY HASH(bucket_id) BUCKETS 32
-PROPERTIES ("compression" = "zstd", "replication_num" = "1");
 
 CREATE TABLE IF NOT EXISTS fragment_md
 (
@@ -213,13 +197,17 @@ CREATE TABLE IF NOT EXISTS fragment_md
     write_time    DATETIME      NOT NULL COMMENT 'write time',
     created_at    DATETIME               DEFAULT CURRENT_TIMESTAMP COMMENT 'create time',
     status        VARCHAR(32)   NOT NULL DEFAULT 'pending' COMMENT 'write status: pending/completed/failure/interrupted',
-    INDEX index_fragment_md_status (status) USING BITMAP,
-    INDEX index_fragment_md_node_name(node_name) USING BITMAP
-) PRIMARY KEY (object_id, fragment_id, shard_id, node_name)
-DISTRIBUTED BY HASH(object_id) BUCKETS 64 PROPERTIES (
-    "compression" = "zstd",
-    "enable_persistent_index" = "true",
-    "replication_num" = "1"
+    INDEX index_fragment_md_status (status) USING INVERTED,
+    INDEX index_fragment_md_node_name (node_name) USING INVERTED
+)
+ENGINE=OLAP
+UNIQUE KEY (object_id, fragment_id, shard_id, node_name)
+DISTRIBUTED BY HASH(object_id) BUCKETS 128 PROPERTIES (
+    "compression" = "zstd",    "replication_num" = "1",
+    "enable_unique_key_merge_on_write" = "true",
+    "group_commit_mode" = "sync_mode",
+    "group_commit_interval_ms" = "30",
+    "group_commit_data_bytes" = "67108864"
 );
 
 CREATE TABLE IF NOT EXISTS multipart_uploads
@@ -234,20 +222,24 @@ CREATE TABLE IF NOT EXISTS multipart_uploads
     encryption_mode  VARCHAR(16)   NOT NULL DEFAULT 'sse-s3' COMMENT 'encryption mode: sse-s3/sse-c/sse-kms',
     kms_key_context  VARCHAR(512)  NOT NULL DEFAULT '' COMMENT 'KMS encryption context (JSON)',
     initiated_time   DATETIME      DEFAULT CURRENT_TIMESTAMP COMMENT 'initiated time',
-    completed_time  DATETIME COMMENT 'completed time',
-    status          VARCHAR(32)   NOT NULL DEFAULT 'active' COMMENT 'status: active/completed/aborted',
-    created_at      DATETIME               DEFAULT CURRENT_TIMESTAMP COMMENT 'create time',
-    lock_mode       VARCHAR(128)  NOT NULL DEFAULT 'COMPLIANCE' COMMENT 'object lock mode: COMPLIANCE/GOVERNANCE',
-    expiration_time DATETIME COMMENT 'lock expiration time',
-    tags            JSON COMMENT 'tag list: [{"Key":"k","Value":"v"},...]',
-    normalized_tags JSON COMMENT 'lowercased tag list for case-insensitive search',
-    INDEX index_multipart_uploads_status (status) USING BITMAP,
-    INDEX index_multipart_uploads_encryption_mode (encryption_mode) USING BITMAP
-) PRIMARY KEY (bucket_id, obj_name_hash, object_name, upload_id)
-DISTRIBUTED BY HASH(bucket_id) BUCKETS 32 PROPERTIES (
-    "compression" = "zstd",
-    "enable_persistent_index" = "true",
-    "replication_num" = "1"
+    completed_time   DATETIME      COMMENT 'completed time',
+    status           VARCHAR(32)   NOT NULL DEFAULT 'active' COMMENT 'status: active/completed/aborted',
+    created_at       DATETIME               DEFAULT CURRENT_TIMESTAMP COMMENT 'create time',
+    lock_mode        VARCHAR(128)  NOT NULL DEFAULT 'COMPLIANCE' COMMENT 'object lock mode: COMPLIANCE/GOVERNANCE',
+    expiration_time  DATETIME      COMMENT 'lock expiration time',
+    tags             JSON          COMMENT 'tag list: [{"Key":"k","Value":"v"},...]',
+    normalized_tags  JSON          COMMENT 'lowercased tag list for case-insensitive search',
+    INDEX index_multipart_uploads_status (status) USING INVERTED,
+    INDEX index_multipart_uploads_encryption_mode (encryption_mode) USING INVERTED
+)
+ENGINE=OLAP
+UNIQUE KEY (bucket_id, obj_name_hash, object_name, upload_id)
+DISTRIBUTED BY HASH(bucket_id) BUCKETS 128 PROPERTIES (
+    "compression" = "zstd",    "replication_num" = "1",
+    "enable_unique_key_merge_on_write" = "true",
+    "group_commit_mode" = "sync_mode",
+    "group_commit_interval_ms" = "20",
+    "group_commit_data_bytes" = "67108864"
 );
 
 CREATE TABLE IF NOT EXISTS parts
@@ -260,12 +252,16 @@ CREATE TABLE IF NOT EXISTS parts
     upload_time DATETIME              DEFAULT CURRENT_TIMESTAMP COMMENT 'upload time',
     status      VARCHAR(32)  NOT NULL DEFAULT 'pending' COMMENT 'status: pending/completed/failure/interrupted',
     created_at  DATETIME              DEFAULT CURRENT_TIMESTAMP COMMENT 'create time',
-    INDEX index_parts_status (status) USING BITMAP
-) PRIMARY KEY (upload_id, part_number)
-DISTRIBUTED BY HASH(upload_id) BUCKETS 32 PROPERTIES (
-    "compression" = "zstd",
-    "enable_persistent_index" = "true",
-    "replication_num" = "1"
+    INDEX index_parts_status (status) USING INVERTED
+)
+ENGINE=OLAP
+UNIQUE KEY (upload_id, part_number)
+DISTRIBUTED BY HASH(upload_id) BUCKETS 128 PROPERTIES (
+    "compression" = "zstd",    "replication_num" = "1",
+    "enable_unique_key_merge_on_write" = "true",
+    "group_commit_mode" = "sync_mode",
+    "group_commit_interval_ms" = "30",
+    "group_commit_data_bytes" = "67108864"
 );
 
 CREATE TABLE IF NOT EXISTS part_fragments
@@ -282,46 +278,206 @@ CREATE TABLE IF NOT EXISTS part_fragments
     crc           VARCHAR(64)   NOT NULL COMMENT 'CRC checksum',
     created_at    DATETIME               DEFAULT CURRENT_TIMESTAMP COMMENT 'create time',
     status        VARCHAR(32)   NOT NULL DEFAULT 'active' COMMENT 'status: active/completed/aborted',
-    INDEX index_part_fragments_status (status) USING BITMAP,
-    INDEX index_part_fragments__node_name(node_name) USING BITMAP
-) PRIMARY KEY (part_id, fragment_id, shard_id, node_name)
-DISTRIBUTED BY HASH(part_id) BUCKETS 64 PROPERTIES (
-    "compression" = "zstd",
-    "enable_persistent_index" = "true",
-    "replication_num" = "1"
+    INDEX index_part_fragments_status (status) USING INVERTED,
+    INDEX index_part_fragments__node_name (node_name) USING INVERTED
+)
+ENGINE=OLAP
+UNIQUE KEY (part_id, fragment_id, shard_id, node_name)
+DISTRIBUTED BY HASH(part_id) BUCKETS 128 PROPERTIES (
+    "compression" = "zstd",    "replication_num" = "1",
+    "enable_unique_key_merge_on_write" = "true",
+    "group_commit_mode" = "sync_mode",
+    "group_commit_interval_ms" = "50",
+    "group_commit_data_bytes" = "67108864"
 );
 
 CREATE TABLE IF NOT EXISTS node_status
 (
-    node_name      VARCHAR(128)  NOT NULL COMMENT 'node name',
-    status         VARCHAR(32)   NOT NULL DEFAULT 'active' COMMENT 'status: active/taint',
-    operator       BIGINT        NOT NULL COMMENT 'operator id',
-    last_update_at DATETIME      NOT NULL DEFAULT CURRENT_TIMESTAMP COMMENT 'create time'
-) PRIMARY KEY (node_name)
-DISTRIBUTED BY HASH(node_name) BUCKETS 3 PROPERTIES (
-    "replication_num" = "1"
+    node_name      VARCHAR(128) NOT NULL COMMENT 'node name',
+    status         VARCHAR(32)  NOT NULL DEFAULT 'active' COMMENT 'status: active/taint',
+    operator       BIGINT       NOT NULL COMMENT 'operator id',
+    last_update_at DATETIME     NOT NULL DEFAULT CURRENT_TIMESTAMP COMMENT 'create time'
+)
+ENGINE=OLAP
+UNIQUE KEY (node_name)
+DISTRIBUTED BY HASH(node_name) BUCKETS 8 PROPERTIES (
+    "replication_num" = "1",
+    "enable_unique_key_merge_on_write" = "true",
+    "group_commit_mode" = "sync_mode",
+    "group_commit_interval_ms" = "10",
+    "group_commit_data_bytes" = "67108864"
 );
 
-CREATE TABLE IF NOT EXISTS tasks (
-    id                BIGINT       NOT NULL,
-    name              VARCHAR(256) NOT NULL,
-    type              VARCHAR(64)  NOT NULL,
-    status            VARCHAR(32)  NOT NULL DEFAULT 'pending',
-    node_name         VARCHAR(128),
-    params            TEXT,
-    output            TEXT,
-    error_message     TEXT,
-    progress          INT          NOT NULL DEFAULT '0',
-    started_at        DATETIME,
-    completed_at      DATETIME,
-    created_by        BIGINT       NOT NULL,
-    created_at        DATETIME     NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    updated_at        DATETIME     NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    INDEX idx_tasks_status(status) USING BITMAP,
-    INDEX idx_tasks_type(type) USING BITMAP,
-    INDEX idx_tasks_node_name(node_name) USING BITMAP
-) PRIMARY KEY(id)
-DISTRIBUTED BY HASH(id) BUCKETS 16;
+CREATE TABLE IF NOT EXISTS tasks
+(
+    id            BIGINT       NOT NULL,
+    name          VARCHAR(256) NOT NULL,
+    type          VARCHAR(64)  NOT NULL,
+    status        VARCHAR(32)  NOT NULL DEFAULT 'pending',
+    node_name     VARCHAR(128),
+    params        TEXT,
+    output        TEXT,
+    error_message TEXT,
+    progress      INT          NOT NULL DEFAULT '0',
+    started_at    DATETIME,
+    completed_at  DATETIME,
+    created_by    BIGINT       NOT NULL,
+    created_at    DATETIME     NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    updated_at    DATETIME     NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    INDEX idx_tasks_status (status) USING INVERTED,
+    INDEX idx_tasks_type (type) USING INVERTED,
+    INDEX idx_tasks_node_name (node_name) USING INVERTED
+)
+ENGINE=OLAP
+UNIQUE KEY (id)
+DISTRIBUTED BY HASH(id) BUCKETS 64
+PROPERTIES (
+    "replication_num" = "1",
+    "enable_unique_key_merge_on_write" = "true",
+    "group_commit_mode" = "sync_mode",
+    "group_commit_interval_ms" = "10",
+    "group_commit_data_bytes" = "67108864"
+);
+
+CREATE TABLE IF NOT EXISTS object_tags
+(
+    bucket_id            BIGINT        NOT NULL,
+    obj_name_hash        LARGEINT      NOT NULL,
+    object_name          VARCHAR(1024) NOT NULL,
+    version              VARCHAR(36)   NOT NULL DEFAULT 'null',
+    tag_key              VARCHAR(128)  NOT NULL,
+    tag_value            VARCHAR(256)  NOT NULL,
+    normalized_tag_key   VARCHAR(128)  NOT NULL COMMENT 'lowercase for case-insensitive search',
+    normalized_tag_value VARCHAR(256)  NOT NULL COMMENT 'lowercase for case-insensitive search',
+    created_at           DATETIME      NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    INDEX index_object_tags_key (tag_key) USING INVERTED,
+    INDEX index_object_tags_normalized_key (normalized_tag_key) USING INVERTED
+)
+ENGINE=OLAP
+UNIQUE KEY (bucket_id, obj_name_hash, object_name, version, tag_key)
+DISTRIBUTED BY HASH(bucket_id) BUCKETS 128
+PROPERTIES (
+    "compression" = "zstd", "replication_num" = "1",
+    "enable_unique_key_merge_on_write" = "true",
+    "group_commit_mode" = "sync_mode",
+    "group_commit_interval_ms" = "20",
+    "group_commit_data_bytes" = "67108864"
+);
+
+-- User metadata from x-amz-meta-* headers (always captured, even when catalog is disabled)
+CREATE TABLE IF NOT EXISTS object_user_metadata
+(
+    bucket_id                BIGINT        NOT NULL,
+    obj_name_hash            LARGEINT      NOT NULL,
+    object_name              VARCHAR(1024) NOT NULL,
+    version                  VARCHAR(36)   NOT NULL DEFAULT 'null',
+    meta_key                 VARCHAR(256)  NOT NULL,
+    meta_value               TEXT          NOT NULL,
+    normalized_meta_key      VARCHAR(256)  NOT NULL COMMENT 'lowercase for case-insensitive search',
+    normalized_meta_value    TEXT          NOT NULL COMMENT 'lowercase for case-insensitive search',
+    created_at               DATETIME      NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    INDEX index_object_user_meta_key (meta_key) USING INVERTED,
+    INDEX index_object_user_meta_norm_key (normalized_meta_key) USING INVERTED
+)
+ENGINE=OLAP
+UNIQUE KEY (bucket_id, obj_name_hash, object_name, version, meta_key)
+DISTRIBUTED BY HASH(bucket_id) BUCKETS 128
+PROPERTIES (
+    "compression" = "zstd", "replication_num" = "1",
+    "enable_unique_key_merge_on_write" = "true",
+    "group_commit_mode" = "sync_mode",
+    "group_commit_interval_ms" = "20",
+    "group_commit_data_bytes" = "67108864"
+);
+
+-- HTTP metadata from S3 request headers (Content-Type, Content-Encoding, etc.)
+CREATE TABLE IF NOT EXISTS object_http_metadata
+(
+    bucket_id                BIGINT        NOT NULL,
+    obj_name_hash            LARGEINT      NOT NULL,
+    object_name              VARCHAR(1024) NOT NULL,
+    version                  VARCHAR(36)   NOT NULL DEFAULT 'null',
+    content_type             VARCHAR(256)  NOT NULL DEFAULT '',
+    content_encoding         VARCHAR(256)  NOT NULL DEFAULT '',
+    content_disposition      VARCHAR(512)  NOT NULL DEFAULT '',
+    cache_control            VARCHAR(256)  NOT NULL DEFAULT '',
+    content_language         VARCHAR(256)  NOT NULL DEFAULT '',
+    expires                  VARCHAR(256)  NOT NULL DEFAULT '',
+    created_at               DATETIME      NOT NULL DEFAULT CURRENT_TIMESTAMP
+)
+ENGINE=OLAP
+UNIQUE KEY (bucket_id, obj_name_hash, object_name, version)
+DISTRIBUTED BY HASH(bucket_id) BUCKETS 128
+PROPERTIES (
+    "compression" = "zstd", "replication_num" = "1",
+    "enable_unique_key_merge_on_write" = "true",
+    "group_commit_mode" = "sync_mode",
+    "group_commit_interval_ms" = "20",
+    "group_commit_data_bytes" = "67108864"
+);
+
+CREATE TABLE IF NOT EXISTS bucket_tags
+(
+    bucket_id            BIGINT       NOT NULL,
+    tag_key              VARCHAR(128) NOT NULL,
+    tag_value            VARCHAR(256) NOT NULL,
+    normalized_tag_key   VARCHAR(128) NOT NULL COMMENT 'lowercase for case-insensitive search',
+    normalized_tag_value VARCHAR(256) NOT NULL COMMENT 'lowercase for case-insensitive search',
+    created_at           DATETIME     NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    INDEX index_bucket_tags_key (tag_key) USING INVERTED,
+    INDEX index_bucket_tags_normalized_key (normalized_tag_key) USING INVERTED
+)
+ENGINE=OLAP
+UNIQUE KEY (bucket_id, tag_key)
+DISTRIBUTED BY HASH(bucket_id) BUCKETS 128
+PROPERTIES (
+    "compression" = "zstd", "replication_num" = "1",
+    "enable_unique_key_merge_on_write" = "true",
+    "group_commit_mode" = "sync_mode",
+    "group_commit_interval_ms" = "20",
+    "group_commit_data_bytes" = "67108864"
+);
+
+CREATE TABLE IF NOT EXISTS bucket_acls
+(
+    id            BIGINT       NOT NULL COMMENT 'ACL entry unique id (generated by GenerateID)',
+    bucket_id     BIGINT       NOT NULL COMMENT 'bucket id',
+    grantee       VARCHAR(256) NOT NULL COMMENT 'grantee identifier: user ID for canonical_user, or URI for AllUsers/AuthenticatedUsers',
+    grantee_type  VARCHAR(32)  NOT NULL COMMENT 'grantee type: canonical_user | all_users | authenticated_users',
+    permission    VARCHAR(32)  NOT NULL COMMENT 'S3 permission: FULL_CONTROL | WRITE | READ | READ_ACP | WRITE_ACP',
+    created_at    DATETIME     NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    INDEX index_bucket_acls_bucket_id (bucket_id) USING INVERTED
+)
+ENGINE=OLAP
+UNIQUE KEY (id)
+DISTRIBUTED BY HASH(id) BUCKETS 64
+PROPERTIES (
+    "replication_num" = "1",
+    "enable_unique_key_merge_on_write" = "true",
+    "group_commit_mode" = "sync_mode",
+    "group_commit_interval_ms" = "10",
+    "group_commit_data_bytes" = "67108864"
+);
+
+CREATE TABLE IF NOT EXISTS dir_entries
+(
+    bucket_id   BIGINT        NOT NULL COMMENT 'bucket id',
+    parent_path VARCHAR(1024) NOT NULL COMMENT 'parent directory path, e.g. "" or "dir1/subdir"',
+    name        VARCHAR(1024) NOT NULL COMMENT 'directory name, e.g. "subdir"',
+    size        BIGINT        NOT NULL DEFAULT '0' COMMENT 'number of direct children (files + subdirs)',
+    mtime       DATETIME      NOT NULL DEFAULT CURRENT_TIMESTAMP COMMENT 'modification time',
+    INDEX index_dir_entries_parent_path (parent_path) USING INVERTED
+)
+ENGINE=OLAP
+UNIQUE KEY (bucket_id, parent_path, name)
+DISTRIBUTED BY HASH(bucket_id) BUCKETS 128
+PROPERTIES (
+    "replication_num" = "1",
+    "enable_unique_key_merge_on_write" = "true",
+    "group_commit_mode" = "sync_mode",
+    "group_commit_interval_ms" = "20",
+    "group_commit_data_bytes" = "67108864"
+);
 
 CREATE TABLE IF NOT EXISTS bucket_notifications
 (
@@ -338,11 +494,17 @@ CREATE TABLE IF NOT EXISTS bucket_notifications
     retry_interval INT          DEFAULT '1' COMMENT 'initial retry backoff seconds',
     created_at     DATETIME     DEFAULT CURRENT_TIMESTAMP COMMENT 'create time',
     last_update_at DATETIME     DEFAULT CURRENT_TIMESTAMP COMMENT 'last update time',
-    INDEX idx_bucket_notifications_bucket_id (bucket_id) USING BITMAP
-) PRIMARY KEY (id)
-DISTRIBUTED BY HASH(id) BUCKETS 3
+    INDEX idx_bucket_notifications_bucket_id (bucket_id) USING INVERTED
+)
+ENGINE=OLAP
+UNIQUE KEY (id)
+DISTRIBUTED BY HASH(id) BUCKETS 128
 PROPERTIES (
-    "replication_num" = "1"
+    "replication_num" = "1",
+    "enable_unique_key_merge_on_write" = "true",
+    "group_commit_mode" = "sync_mode",
+    "group_commit_interval_ms" = "10",
+    "group_commit_data_bytes" = "67108864"
 );
 
 CREATE TABLE IF NOT EXISTS notification_queue
@@ -363,12 +525,18 @@ CREATE TABLE IF NOT EXISTS notification_queue
     ttl_expires_at  DATETIME     NOT NULL COMMENT 'row expires at this time, will be discarded afterwards',
     created_at      DATETIME     DEFAULT CURRENT_TIMESTAMP COMMENT 'create time',
     last_update_at  DATETIME     DEFAULT CURRENT_TIMESTAMP COMMENT 'last update time',
-    INDEX idx_nq_owner_node (owner_node) USING BITMAP,
-    INDEX idx_nq_status (status) USING BITMAP
-) PRIMARY KEY (id)
-DISTRIBUTED BY HASH(id) BUCKETS 3
+    INDEX idx_nq_owner_node (owner_node) USING INVERTED,
+    INDEX idx_nq_status (status) USING INVERTED
+)
+ENGINE=OLAP
+UNIQUE KEY (id)
+DISTRIBUTED BY HASH(id) BUCKETS 128
 PROPERTIES (
-    "replication_num" = "1"
+    "replication_num" = "1",
+    "enable_unique_key_merge_on_write" = "true",
+    "group_commit_mode" = "sync_mode",
+    "group_commit_interval_ms" = "30",
+    "group_commit_data_bytes" = "67108864"
 );
 
 CREATE TABLE IF NOT EXISTS audit_log
@@ -391,34 +559,27 @@ CREATE TABLE IF NOT EXISTS audit_log
     target_resource_id VARCHAR(64)   DEFAULT '' COMMENT 'Target resource ID for admin operations',
     action_details     TEXT          COMMENT 'JSON string with additional action details',
     created_at         DATETIME      DEFAULT CURRENT_TIMESTAMP COMMENT 'Record creation time',
-    INDEX idx_audit_timestamp (timestamp) USING BITMAP,
-    INDEX idx_audit_operation_type (operation_type) USING BITMAP,
-    INDEX idx_audit_user_identity (user_identity) USING BITMAP,
-    INDEX idx_audit_bucket_name (bucket_name) USING BITMAP,
-    INDEX idx_audit_status_code (status_code) USING BITMAP,
-    INDEX idx_audit_request_id (request_id) USING GIN
-) PRIMARY KEY (id, timestamp)
+    INDEX idx_audit_timestamp (timestamp) USING INVERTED,
+    INDEX idx_audit_operation_type (operation_type) USING INVERTED,
+    INDEX idx_audit_user_identity (user_identity) USING INVERTED,
+    INDEX idx_audit_bucket_name (bucket_name) USING INVERTED,
+    INDEX idx_audit_status_code (status_code) USING INVERTED,
+    INDEX idx_audit_request_id (request_id) USING INVERTED
+)
+ENGINE=OLAP
+UNIQUE KEY (id, timestamp)
 PARTITION BY RANGE(timestamp)
 (
-    PARTITION p20260729 VALUES LESS THAN ("2026-07-30")
+    PARTITION p20260818 VALUES LESS THAN ("2026-08-19")
 )
-DISTRIBUTED BY HASH(id) BUCKETS 3
+DISTRIBUTED BY HASH(id) BUCKETS 128
 PROPERTIES (
     "replication_num" = "1",
+    "enable_unique_key_merge_on_write" = "true",
+    "group_commit_mode" = "async_mode",
+    "group_commit_interval_ms" = "500",
+    "group_commit_data_bytes" = "67108864",
     "compression" = "zstd"
-);
-
-CREATE TABLE IF NOT EXISTS dir_entries
-(
-    bucket_id   BIGINT        NOT NULL COMMENT 'bucket id',
-    parent_path VARCHAR(1024) NOT NULL COMMENT 'parent directory path, e.g. "" or "dir1/subdir"',
-    name        VARCHAR(1024) NOT NULL COMMENT 'directory name, e.g. "subdir"',
-    size        BIGINT        NOT NULL DEFAULT '0' COMMENT 'number of direct children (files + subdirs)',
-    mtime       DATETIME      NOT NULL DEFAULT CURRENT_TIMESTAMP COMMENT 'modification time'
-) PRIMARY KEY (bucket_id, parent_path, name)
-DISTRIBUTED BY HASH(bucket_id) BUCKETS 32
-PROPERTIES (
-    "replication_num" = "1"
 );
 
 CREATE TABLE IF NOT EXISTS kms_config
@@ -439,9 +600,17 @@ CREATE TABLE IF NOT EXISTS kms_config
     allow_degraded_reads BOOLEAN      NOT NULL DEFAULT '0' COMMENT 'allow reads with expired BK cache when KMS offline',
     created_at           DATETIME     NOT NULL DEFAULT CURRENT_TIMESTAMP,
     updated_at           DATETIME     NOT NULL DEFAULT CURRENT_TIMESTAMP
-) PRIMARY KEY (id)
-DISTRIBUTED BY HASH(id) BUCKETS 1
-PROPERTIES ("replication_num" = "1");
+)
+ENGINE=OLAP
+UNIQUE KEY (id)
+DISTRIBUTED BY HASH(id) BUCKETS 16
+PROPERTIES (
+    "replication_num" = "1",
+    "enable_unique_key_merge_on_write" = "true",
+    "group_commit_mode" = "sync_mode",
+    "group_commit_interval_ms" = "10",
+    "group_commit_data_bytes" = "67108864"
+);
 
 CREATE TABLE IF NOT EXISTS kms_keys
 (
@@ -456,22 +625,38 @@ CREATE TABLE IF NOT EXISTS kms_keys
     retired_at      DATETIME     COMMENT 'when this key was retired (set on rotate)',
     created_at      DATETIME     NOT NULL DEFAULT CURRENT_TIMESTAMP,
     updated_at      DATETIME     NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    INDEX idx_kms_keys_status (status) USING BITMAP,
-    INDEX idx_kms_keys_key_id (key_id) USING GIN,
-    INDEX idx_kms_keys_config_id (kms_config_id) USING BITMAP,
-    INDEX idx_kms_keys_group_id (group_id) USING BITMAP
-) PRIMARY KEY (id)
-DISTRIBUTED BY HASH(id) BUCKETS 3
-PROPERTIES ("replication_num" = "1");
+    INDEX idx_kms_keys_status (status) USING INVERTED,
+    INDEX idx_kms_keys_key_id (key_id) USING INVERTED,
+    INDEX idx_kms_keys_config_id (kms_config_id) USING INVERTED,
+    INDEX idx_kms_keys_group_id (group_id) USING INVERTED
+)
+ENGINE=OLAP
+UNIQUE KEY (id)
+DISTRIBUTED BY HASH(id) BUCKETS 32
+PROPERTIES (
+    "replication_num" = "1",
+    "enable_unique_key_merge_on_write" = "true",
+    "group_commit_mode" = "sync_mode",
+    "group_commit_interval_ms" = "10",
+    "group_commit_data_bytes" = "67108864"
+);
 
 CREATE TABLE IF NOT EXISTS cluster_config
 (
     ckey   VARCHAR(128) NOT NULL COMMENT 'config key',
     cvalue TEXT         NOT NULL COMMENT 'config value',
     created_at DATETIME DEFAULT CURRENT_TIMESTAMP COMMENT 'create time'
-) PRIMARY KEY (ckey)
-DISTRIBUTED BY HASH(ckey) BUCKETS 1
-PROPERTIES ("replication_num" = "1");
+)
+ENGINE=OLAP
+UNIQUE KEY (ckey)
+DISTRIBUTED BY HASH(ckey) BUCKETS 16
+PROPERTIES (
+    "replication_num" = "1",
+    "enable_unique_key_merge_on_write" = "true",
+    "group_commit_mode" = "sync_mode",
+    "group_commit_interval_ms" = "10",
+    "group_commit_data_bytes" = "67108864"
+);
 
 CREATE TABLE IF NOT EXISTS mfa_backup_codes
 (
@@ -480,11 +665,19 @@ CREATE TABLE IF NOT EXISTS mfa_backup_codes
     code_hash  VARCHAR(64)  NOT NULL COMMENT 'SHA-256 hash of backup code',
     is_used    BOOLEAN      NOT NULL DEFAULT '0' COMMENT 'whether this code has been used',
     created_at DATETIME     NOT NULL DEFAULT CURRENT_TIMESTAMP COMMENT 'create time',
-    INDEX index_mfa_backup_codes_user_id (user_id) USING BITMAP,
-    INDEX index_mfa_backup_codes_is_used (is_used) USING BITMAP
-) PRIMARY KEY (id)
+    INDEX index_mfa_backup_codes_user_id (user_id) USING INVERTED,
+    INDEX index_mfa_backup_codes_is_used (is_used) USING INVERTED
+)
+ENGINE=OLAP
+UNIQUE KEY (id)
 DISTRIBUTED BY HASH(id) BUCKETS 3
-PROPERTIES ("replication_num" = "1");
+PROPERTIES (
+    "replication_num" = "1",
+    "enable_unique_key_merge_on_write" = "true",
+    "group_commit_mode" = "sync_mode",
+    "group_commit_interval_ms" = "10",
+    "group_commit_data_bytes" = "67108864"
+);
 
 CREATE TABLE IF NOT EXISTS personal_access_tokens
 (
@@ -494,14 +687,23 @@ CREATE TABLE IF NOT EXISTS personal_access_tokens
     token_hash   VARCHAR(64)  NOT NULL COMMENT 'SHA-256 hash of full token',
     description  VARCHAR(256) NOT NULL DEFAULT '' COMMENT 'user-provided description',
     last_used_at DATETIME     COMMENT 'last usage timestamp',
-    is_disabled  BOOLEAN      NOT NULL DEFAULT '0' COMMENT 'disabled by user',
     expires_at   DATETIME     COMMENT 'expiration timestamp (NULL = never)',
+    is_disabled  BOOLEAN      NOT NULL DEFAULT '0' COMMENT 'disabled by user',
     created_at   DATETIME     NOT NULL DEFAULT CURRENT_TIMESTAMP COMMENT 'create time',
-    INDEX index_pat_user_id (user_id) USING BITMAP
-) PRIMARY KEY (id)
-DISTRIBUTED BY HASH(id) BUCKETS 3
-PROPERTIES ("replication_num" = "1");
+    INDEX index_pat_user_id (user_id) USING INVERTED
+)
+ENGINE=OLAP
+UNIQUE KEY (id)
+DISTRIBUTED BY HASH(id) BUCKETS 32
+PROPERTIES (
+    "replication_num" = "1",
+    "enable_unique_key_merge_on_write" = "true",
+    "group_commit_mode" = "sync_mode",
+    "group_commit_interval_ms" = "10",
+    "group_commit_data_bytes" = "67108864"
+);
 
+-- token_blacklist 表: 已吊销的 JWT 令牌（跨节点共享）
 CREATE TABLE IF NOT EXISTS token_blacklist
 (
     jti        VARCHAR(64)  NOT NULL COMMENT 'JWT ID (token unique identifier)',
@@ -509,13 +711,17 @@ CREATE TABLE IF NOT EXISTS token_blacklist
     revoked_at DATETIME     NOT NULL DEFAULT CURRENT_TIMESTAMP COMMENT 'revocation timestamp',
     expires_at DATETIME     NOT NULL COMMENT 'JWT original expiry (for auto-cleanup)',
     reason     VARCHAR(64)  NOT NULL DEFAULT '' COMMENT 'revocation reason: logout / password_change / admin_revoke / mfa_disable',
-    INDEX index_tb_user (user_id) USING BITMAP,
-    INDEX index_tb_expires (expires_at) USING BITMAP
-) PRIMARY KEY (jti)
-DISTRIBUTED BY HASH(jti) BUCKETS 3
-PROPERTIES (
-    "enable_persistent_index" = "true",
-    "replication_num" = "1"
+    INDEX index_tb_user (user_id) USING INVERTED,
+    INDEX index_tb_expires (expires_at) USING INVERTED
+)
+ENGINE=OLAP
+UNIQUE KEY (jti)
+DISTRIBUTED BY HASH(jti) BUCKETS 32
+PROPERTIES (    "replication_num" = "1",
+    "enable_unique_key_merge_on_write" = "true",
+    "group_commit_mode" = "sync_mode",
+    "group_commit_interval_ms" = "10",
+    "group_commit_data_bytes" = "67108864"
 );
 
 CREATE TABLE IF NOT EXISTS bucket_lifecycle_rules
@@ -535,12 +741,22 @@ CREATE TABLE IF NOT EXISTS bucket_lifecycle_rules
     priority              INT           NOT NULL DEFAULT '0' COMMENT 'rule priority (lower = higher priority)',
     created_at            DATETIME      NOT NULL DEFAULT CURRENT_TIMESTAMP COMMENT 'create time',
     updated_at            DATETIME      NOT NULL DEFAULT CURRENT_TIMESTAMP COMMENT 'update time',
-    INDEX index_tb_bucket_lifecycle_rules_id (id) USING BITMAP
-) PRIMARY KEY(bucket_id, rule_id)
-DISTRIBUTED BY HASH(bucket_id) BUCKETS 10
+    INDEX index_tb_bucket_lifecycle_rules_id (id) USING INVERTED
+)
+ENGINE=OLAP
+UNIQUE KEY (bucket_id, rule_id)
+DISTRIBUTED BY HASH(bucket_id) BUCKETS 32
 PROPERTIES (
-    "replication_num" = "1"
+    "replication_num" = "1",
+    "enable_unique_key_merge_on_write" = "true",
+    "group_commit_mode" = "sync_mode",
+    "group_commit_interval_ms" = "10",
+    "group_commit_data_bytes" = "67108864"
 );
+
+INSERT INTO cluster_config (ckey, cvalue)
+SELECT 'jwt_secret', SUBSTR(REPLACE(UUID(), '-', ''), 1, 32)
+WHERE NOT EXISTS (SELECT 1 FROM cluster_config WHERE ckey = 'jwt_secret');
 
 INSERT INTO user_groups (id, name, default_policy_id)
 VALUES (1, 'default', NULL);
@@ -550,7 +766,7 @@ INSERT INTO users (id,
                    password,
                    accesskey,
                    secretkey,
-                   role,
+                   urole,
                    group_id,
                    must_change_password,
                    bypass)
@@ -563,7 +779,3 @@ VALUES (1,
         0,
         '1',
         '0');
-        
-INSERT INTO cluster_config (ckey, cvalue)
-SELECT 'jwt_secret', SUBSTR(REPLACE(UUID(), '-', ''), 1, 32)
-WHERE NOT EXISTS (SELECT 1 FROM cluster_config WHERE ckey = 'jwt_secret');

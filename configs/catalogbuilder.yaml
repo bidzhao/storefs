@@ -1,0 +1,45 @@
+doris:
+  host: "127.0.0.1"
+  port: 9030
+  database: "mydb"
+  user: "root"
+  password: ""
+
+s3:
+  endpoint: "http://127.0.0.1:8901"
+  access_key: "admin-ak"
+  secret_key: "admin-sk"
+  region: "us-east-1"
+
+opensearch:
+  urls:
+    - "https://127.0.0.1:9200"
+  username: "admin"
+  password: "your-opensearch-password"
+  index_objects: "catalog-objects"
+  index_entities: "catalog-entities"
+
+embedding:
+  provider: "openai"
+  base_url: "https://api.siliconflow.cn/v1"
+  api_key: "your-api-key"
+  model: "BAAI/bge-m3"
+  dimensions: 1024
+  batch_size: 20
+  concurrency: 10
+  rate_limit_rpm: 20
+  chat_model: "deepseek-ai/DeepSeek-OCR"
+  max_chunk_chars: 8000
+  max_chunks: 8
+
+builder:
+  scan_batch_size: 100
+  incremental_interval: 30s
+  audio_workers: 2
+  embed_workers: 5
+  media:
+    enabled: false
+    whisper_binary: "/path/to/whisper.cpp-master/build/bin/whisper-cli"
+    whisper_model: "/path/to/whisper.cpp-master/models/ggml-small.bin"
+    ffmpeg_binary: "/usr/bin/ffmpeg"
+    frame_fps: 1

@@ -16,6 +16,7 @@
 - [Gateway (NFS/SMB)](#gateway-nfssmb-1)
 - [监控](#监控)
 - [MCP for AI Agent](#mcp-for-ai-agent)
+- [目录搜索](#目录搜索)
 - [通知系统](#通知系统)
 - [审计日志](#审计日志)
 - [任务系统](#任务系统)
@@ -45,6 +46,7 @@ StoreFS是一个基于Go语言实现的分布式S3兼容存储系统，采用gos
 - **任务管理**：后台任务系统，用于执行长时间运行的管理操作，如修复损坏的文件片段和替换故障磁盘，支持进度追踪和取消操作。
 - **节点污点标记**：将节点标记为污点（taint）以阻止新数据写入，或重新激活节点——适用于节点维护、磁盘替换或故障排查场景。
 - **事件通知**：基于 Webhook 的桶级别事件通知，当对象创建或删除时自动触发。支持可配置的事件类型、对象键前缀/后缀过滤、HMAC-SHA256 签名验证、指数退避重试，以及原生和 AWS S3 兼容两种负载格式。
+- **目录搜索**：基于 OpenSearch 的全文检索和向量（语义）搜索，覆盖所有存储对象。支持混合搜索、SQL 模式查询、常见文档格式的自动内容提取，以及按权限过滤搜索结果。
 
 ### 核心概念
 
@@ -104,7 +106,7 @@ StoreFS使用YAML格式的配置文件（config.yaml），以下是配置项的�
 ```yaml
 cluster:
   name: mycluster              # 集群名称，所有节点必须使用相同的名称
-  db:                          # 数据库配置（使用StarRocks作为元数据存储）
+  db:                          # 数据库配置（使用Apache Doris作为元数据存储）
     host: "127.0.0.1"          # 数据库主机地址
     port: 9030                 # MySQL查询端口
     user: "root"               # 数据库用户名
@@ -136,14 +138,14 @@ cluster:
 
 #### 步骤1：部署数据库
 
-StoreFS使用StarRocks作为元数据存储，需要先部署StarRocks：
+StoreFS使用Apache Doris作为元数据存储，需要先部署Apache Doris：
 
 ```bash
-# 下载并启动StarRocks（单节点部署）
-url: https://www.starrocks.io/download/community/index.html
+# 下载并启动Apache Doris（单节点部署）
+url: https://doris.apache.org/download/
 
-tar -xzf StarRocks-<versiion>.tar.gz
-cd StarRocks-<version>
+tar -xzf apache-doris-<versiion>-bin-x86_64.tar.gz
+cd apache-doris-<version>-bin-x86_64
 
 # 启动FE（Frontend）
 ./fe/bin/start_fe.sh --daemon
@@ -211,7 +213,7 @@ docker-compose up -d
 ```
 
 Docker Compose会自动启动：
-- 1个StarRocks数据库容器
+- 1个Apache Doris数据库容器
 - 3个StoreFS节点容器
 - 端口映射：节点1(7946/8901)、节点2(7947/8902)、节点3(7948/8903)
 
@@ -487,6 +489,31 @@ StoreFS 提供了 [MCP（模型上下文协议）](https://modelcontextprotocol.
 
 详细信息请参考：[MCP 服务器指南](docs/mcp_cn.md)
 
+## 目录搜索
+
+StoreFS 提供 **目录搜索（Catalog）** 功能，支持对集群中所有存储对象进行全文检索和向量（语义）搜索，基于 OpenSearch 构建。
+
+### 主要特性
+
+- **全文检索**：对对象名（3×）、内容文本、标签、元数据和内容类型进行加权搜索
+- **向量搜索（k-NN）**：使用 OpenSearch 的 k-NN 插件（HNSW，余弦相似度）进行语义相似度搜索
+- **混合搜索**：通过 RRF（倒数排序融合）结合全文检索和向量搜索，获得最佳结果
+- **SQL 模式搜索**：使用简单 SQL 语法查询，如 `SELECT * WHERE tag='key:value' AND size>=1000`
+- **内容提取**：自动从 PDF、DOCX、XLSX、HTML、EPUB、MOBI、纯文本、音频（Whisper）和视频/图像（视觉 LLM）中提取文本
+- **权限感知**：搜索结果自动按用户的桶权限过滤
+- **MCP 集成**：通过自然语言搜索目录
+
+### 架构
+
+目录搜索由三个组件组成：
+- **目录搜索引擎**：内置在 StoreFS 服务器中 — 查询 OpenSearch 并验证结果时效性
+- **CatalogBuilder**：独立程序，扫描元数据数据库、提取内容、生成向量嵌入并将文档写入 OpenSearch 索引。支持水平扩展。
+- **OpenSearch**：多节点搜索后端，带 k-NN 插件
+
+### 文档
+
+详细信息请参考：[目录搜索文档](docs/catalog_cn.md)
+
 ## 通知系统
 
 StoreFS 提供基于 Webhook 的事件通知系统，当桶中的对象被创建或删除时，自动向已配置的端点发送 HTTP POST 请求。该系统与 AWS S3 事件通知兼容。
@@ -514,7 +541,7 @@ StoreFS 提供完整的审计日志系统，记录集群上所有管理操作和
 
 - **自动捕获**：每个 Admin API 和 S3 API 请求都会自动记录，无需修改应用程序
 - **丰富的元数据**：记录用户身份、操作类型、资源、客户端 IP、状态码、耗时、请求 ID 等
-- **多输出目标**：支持数据库（StarRocks）、syslog（本地/远程）和文件输出
+- **多输出目标**：支持数据库（Apache Doris）、syslog（本地/远程）和文件输出
 - **异步处理**：审计条目通过缓冲通道在后台处理，从不阻塞请求处理
 - **批量插入**：数据库输出使用批量插入（100 条或 1 秒窗口），高效存储
 - **请求追踪**：每个请求携带唯一的 `X-Request-ID` 头部，用于跨集群的分布式追踪

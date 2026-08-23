@@ -149,7 +149,7 @@ PAT 可以绕过 MFA，适用于程序化访问。`storefs_login_with_pat` 工�
 
 ## 功能概览
 
-MCP 服务器提供 **60+ 工具**，分为十个功能组：
+MCP 服务器提供 **70+ 工具**，分为十一个功能组：
 
 ### 1. 系统工具
 
@@ -332,6 +332,29 @@ KMS 提供 **SSE-KMS**（使用 KMS 管理密钥的服务端加密）作为除 S
 
 详细文档请参考：[KMS 配置](admin-api_cn.md#9-kms-管理) 的管理 API 文档。
 
+### 10. 目录搜索工具
+
+| 工具 | 说明 |
+|------|------|
+| `storefs_catalog_stats` | 获取目录搜索状态（启用/禁用，OpenSearch 信息） |
+| `storefs_catalog_enable` | 启用目录搜索引擎（仅 super_admin） |
+| `storefs_catalog_disable` | 禁用目录搜索引擎（仅 super_admin） |
+| `storefs_catalog_config` | 更新目录搜索配置 — OpenSearch（端点、凭据、索引名）和 Embedding（基础 URL、模型、维度、API 密钥） |
+| `storefs_catalog_get_config` | 获取当前目录搜索配置（OpenSearch + Embedding 设置） |
+| `storefs_catalog_search_objects` | 全文检索 + 过滤搜索对象（支持 object_type、content_type、tags、meta、prefix、bucket_ids、大小范围、时间范围） |
+| `storefs_catalog_search` | SQL 模式搜索 — 如 `SELECT * WHERE tag='key:value' AND size>=1000` |
+| `storefs_catalog_vector_search` | 向量相似度搜索 — 通过向量数组或文本（自动生成嵌入），可选 bucket_ids 和 object_type 过滤 |
+| `storefs_catalog_get_object_metadata` | 获取对象元数据（user_meta、http_meta），按 bucket_id 和 object_name |
+| `storefs_catalog_test_connection` | 测试 OpenSearch 连接（返回集群名、健康状态、版本） |
+| `storefs_catalog_test_embedding` | 测试 Embedding API 连接（返回连接状态） |
+
+目录搜索功能支持对所有存储对象进行全文检索和语义搜索。需要以下组件：
+- **OpenSearch** 集群（需安装 k-NN 插件以支持向量搜索）
+- **CatalogBuilder**（独立进程）负责扫描、提取内容、生成向量嵌入并写入索引
+- 可选 **Embedding API**（兼容 OpenAI 格式）用于混合搜索
+
+详细文档请参考：[目录搜索文档](catalog_cn.md)。
+
 ---
 
 ## 常用提示词
@@ -440,6 +463,21 @@ KMS 提供 **SSE-KMS**（使用 KMS 管理密钥的服务端加密）作为除 S
 更新通知 5，将其禁用
 删除通知 5
 使用原生格式测试 Webhook URL https://hooks.example.com/test
+```
+
+### 目录搜索
+
+```
+查看目录搜索状态
+搜索包含 "报告" 的对象
+搜索标签为 "project:alpha" 且大小大于 1MB 的 PDF 文件
+SQL 搜索：SELECT * WHERE object_type='pdf' AND size>=1000000
+搜索桶 1 中前缀为 "documents/" 的对象
+向量搜索：查找与 "季度财务报告" 相似的对象
+获取目录搜索配置
+启用目录搜索引擎
+测试 OpenSearch 连接
+测试 Embedding API 连接
 ```
 
 ### 维护与故障排查

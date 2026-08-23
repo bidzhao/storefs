@@ -8,13 +8,13 @@
 
 #### Symptoms
 - "database connection failed" message at startup
-- Cannot connect to MySQL or StarRocks
+- Cannot connect to MySQL or Apache Doris
 
 #### Possible Causes and Solutions
 
 1. **Database Service Not Started**
    - Check MySQL service status: `systemctl status mysql`
-   - Check StarRocks service status: `./fe/bin/start_fe.sh --status`
+   - Check Apache Doris service status: `./fe/bin/start_fe.sh --status`
    - Ensure the database service is running
 
 2. **Database Configuration Error**
@@ -312,7 +312,7 @@ mysqldump -h <host> -P <port> -u <user> -p <database> > backup.sql
 mysql -h <host> -P <port> -u <user> -p <database> < backup.sql
 ```
 
-#### StarRocks Backup
+#### Apache Doris Backup
 
 ```bash
 # Backup metadata

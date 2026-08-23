@@ -149,7 +149,7 @@ PATs bypass MFA and work for programmatic access. The `storefs_login_with_pat` t
 
 ## Feature Overview
 
-The MCP server exposes **60+ tools** organized into ten groups:
+The MCP server exposes **70+ tools** organized into eleven groups:
 
 ### 1. System Tools
 
@@ -335,6 +335,29 @@ Key rotation creates a new key, re-wraps all bucket DEKs from the old CMK to the
 
 For detailed documentation, see the [KMS Configuration](admin-api.md#9-kms-management) section in the Admin API documentation.
 
+### 10. Catalog Search Tools
+
+| Tool | Description |
+|------|-------------|
+| `storefs_catalog_stats` | Get catalog search status (enabled/disabled, OpenSearch info) |
+| `storefs_catalog_enable` | Enable catalog search engine (super_admin only) |
+| `storefs_catalog_disable` | Disable catalog search engine (super_admin only) |
+| `storefs_catalog_config` | Update catalog configuration — OpenSearch (endpoint, credentials, index names) and Embedding (base URL, model, dimensions, API key) |
+| `storefs_catalog_get_config` | Get current catalog configuration (OpenSearch + Embedding settings) |
+| `storefs_catalog_search_objects` | Search objects with full-text query and filters (object_type, content_type, tags, meta, prefix, bucket_ids, size range, time range) |
+| `storefs_catalog_search` | SQL-like search — e.g., `SELECT * WHERE tag='key:value' AND size>=1000` |
+| `storefs_catalog_vector_search` | Vector similarity search — by vector array or text (auto-embeds text), with optional bucket_ids and object_type filter |
+| `storefs_catalog_get_object_metadata` | Get object metadata (user_meta, http_meta) by bucket_id and object_name |
+| `storefs_catalog_test_connection` | Test OpenSearch connectivity using saved config (returns cluster name, health status, version) |
+| `storefs_catalog_test_embedding` | Test Embedding API connectivity using saved config (returns connection status) |
+
+The catalog enables full-text and semantic search across all objects. It requires:
+- **OpenSearch** cluster (with k-NN plugin for vector search)
+- **CatalogBuilder** (standalone process) to scan, extract content, generate embeddings, and index objects
+- Optional **Embedding API** (OpenAI-compatible) for hybrid search
+
+For detailed documentation, see the [Catalog Search Documentation](catalog.md).
+
 ---
 
 ## Suggested Prompts
@@ -443,6 +466,21 @@ Create a webhook notification for bucket 1: URL https://hooks.example.com/notify
 Update notification 5 to disable it
 Delete notification 5
 Test webhook URL https://hooks.example.com/test with native format
+```
+
+### Catalog Search
+
+```
+Check the catalog search status
+Search for objects containing "report"
+Search for PDF files with tag "project:alpha" and size > 1MB
+Search SQL: SELECT * WHERE object_type='pdf' AND size>=1000000
+Search for objects in bucket 1 with prefix "documents/"
+Vector search: find objects similar to "quarterly financial report"
+Get the catalog configuration
+Enable the catalog search engine
+Test the OpenSearch connection
+Test the Embedding API connection
 ```
 
 ### Maintenance & Troubleshooting
