@@ -149,7 +149,7 @@ PATs bypass MFA and work for programmatic access. The `storefs_login_with_pat` t
 
 ## Feature Overview
 
-The MCP server exposes **70+ tools** organized into eleven groups:
+The MCP server exposes **90+ tools** organized into twelve groups:
 
 ### 1. System Tools
 
@@ -204,13 +204,15 @@ Two policy types are supported:
 | Tool | Description |
 |------|-------------|
 | `storefs_list_buckets` | List buckets with filtering (by user/group) |
-| `storefs_get_bucket` | Get bucket configuration details |
+| `storefs_get_bucket` | Get bucket configuration details (by `bucketId` **or** `bucketName`) |
 | `storefs_create_bucket` | Create a new bucket (name must be globally unique) |
-| `storefs_update_bucket` | Modify bucket configuration |
-| `storefs_delete_bucket` | Delete an empty bucket |
-| `storefs_generate_presigned_url` | Generate a presigned URL for upload/download |
-| `storefs_get_bucket_acl` | Get bucket ACL (access control list) |
-| `storefs_put_bucket_acl` | Set bucket ACL — control read/write access for users |
+| `storefs_update_bucket` | Modify bucket configuration (by `bucketId` **or** `bucketName`) |
+| `storefs_delete_bucket` | Delete an empty bucket (by `bucketId` **or** `bucketName`) |
+| `storefs_generate_presigned_url` | Generate a presigned URL for upload/download (by `bucketId` **or** `bucketName`) |
+| `storefs_get_bucket_acl` | Get bucket ACL (access control list) — by `bucketId` **or** `bucketName` |
+| `storefs_put_bucket_acl` | Set bucket ACL — control read/write access for users (by `bucketId` **or** `bucketName`) |
+
+> **Note:** Bucket tools accept either `bucketId` (numeric) or `bucketName`. Provide one of the two; `bucketName` is convenient in natural-language use (e.g., "get bucket lakehouse").
 
 Bucket ACL grantee types:
 - **canonical_user**: A specific user (identified by user ID)
@@ -232,11 +234,11 @@ Bucket-level features you can configure:
 
 | Tool | Description |
 |------|-------------|
-| `storefs_list_objects` | List objects in a bucket |
+| `storefs_list_objects` | List objects in a bucket (by `bucketId` **or** `bucketName`) |
 | `storefs_get_object_info` | Get object fragment distribution across nodes |
-| `storefs_get_object_versions` | List all versions of an object |
-| `storefs_delete_object` | Delete an object (supports version-ID) |
-| `storefs_list_multipart_uploads` | List incomplete multipart uploads |
+| `storefs_get_object_versions` | List all versions of an object (by `bucketId` **or** `bucketName`) |
+| `storefs_delete_object` | Delete an object — supports version-ID (by `bucketId` **or** `bucketName`) |
+| `storefs_list_multipart_uploads` | List incomplete multipart uploads (by `bucketId` **or** `bucketName`) |
 | `storefs_get_multipart_upload` | Get multipart upload details with part list |
 | `storefs_complete_multipart_upload` | Complete a multipart upload |
 | `storefs_abort_multipart_upload` | Cancel a multipart upload |
@@ -286,9 +288,9 @@ For detailed documentation on the task system, repair, and replace-disk operatio
 
 | Tool | Description |
 |------|-------------|
-| `storefs_list_bucket_notifications` | List all notification configs for a bucket |
+| `storefs_list_bucket_notifications` | List all notification configs for a bucket (by `bucketId` **or** `bucketName`) |
 | `storefs_get_notification` | Get details of a single notification |
-| `storefs_create_notification` | Create a new webhook notification for a bucket |
+| `storefs_create_notification` | Create a new webhook notification for a bucket (by `bucketId` **or** `bucketName`) |
 | `storefs_update_notification` | Update an existing notification config |
 | `storefs_delete_notification` | Delete a notification config |
 | `storefs_test_webhook` | Send a test event to a webhook URL to verify connectivity |
@@ -357,6 +359,37 @@ The catalog enables full-text and semantic search across all objects. It require
 - Optional **Embedding API** (OpenAI-compatible) for hybrid search
 
 For detailed documentation, see the [Catalog Search Documentation](catalog.md).
+
+### 11. Lakehouse (Iceberg) Tools
+
+Manage the StoreFS lakehouse — catalogs, namespaces, tables, and maintenance — through natural language. These tools wrap the Iceberg admin control plane (`/api/iceberg/admin/...`).
+
+| Tool | Description |
+|------|-------------|
+| `storefs_iceberg_get_status` | Check whether the Iceberg lakehouse feature is enabled |
+| `storefs_iceberg_enable` | Enable Iceberg cluster-wide (auto-creates the warehouse bucket) |
+| `storefs_iceberg_disable` | Disable Iceberg cluster-wide |
+| `storefs_iceberg_get_config` | Get Iceberg config (enabled, warehouse bucket, default namespace, idempotency retention, orphan grace period) |
+| `storefs_iceberg_set_config` | Update Iceberg config (all fields optional) |
+| `storefs_iceberg_list_catalogs` | List catalogs the current user can access |
+| `storefs_iceberg_get_catalog` | Get a single catalog's details (warehouse, owner, status) |
+| `storefs_iceberg_create_catalog` | Create a catalog on a writable warehouse (`s3://bucket/prefix/`) |
+| `storefs_iceberg_delete_catalog` | Soft-delete a catalog (owner or super_admin only; must be empty) |
+| `storefs_iceberg_list_namespaces` | List namespaces of a catalog (with table counts) |
+| `storefs_iceberg_list_tables` | List tables in a namespace (size, snapshot count, last updated) |
+| `storefs_iceberg_get_table` | Get table details (location, metadata location, table UUID) |
+| `storefs_iceberg_get_schema` | Get table schema (fields, types, required, partition spec) |
+| `storefs_iceberg_list_snapshots` | List snapshot history of a table |
+| `storefs_iceberg_list_commits` | List commit history (head generation, commit IDs, writers) |
+| `storefs_iceberg_storage_usage` | Get storage usage per namespace (total/data/metadata bytes and files) |
+| `storefs_iceberg_expire_snapshots` | Expire old snapshots (`retain_last`, `dry_run` supported) |
+| `storefs_iceberg_remove_orphan_files` | Remove orphan files (`dry_run` supported) |
+| `storefs_iceberg_compact_metadata` | Compact the metadata chain (`dry_run` supported) |
+| `storefs_iceberg_query` | Query table data with SQL (`SELECT col1, col2 FROM ...` via Parquet/Arrow) |
+
+All maintenance tools (`expire_snapshots`, `remove_orphan_files`, `compact_metadata`) support `dry_run: true` to preview candidates before acting.
+
+For full details on the lakehouse, see the [Lakehouse Documentation](lakehouse.md).
 
 ---
 
@@ -481,6 +514,24 @@ Get the catalog configuration
 Enable the catalog search engine
 Test the OpenSearch connection
 Test the Embedding API connection
+```
+
+### Lakehouse (Iceberg)
+
+```
+Check whether Iceberg is enabled
+Enable the Iceberg lakehouse
+List all catalogs
+Create a catalog "analytics" on warehouse "s3://analytics-wh/"
+List namespaces in catalog "lakehouse"
+List tables in namespace "sales"
+Show the schema of table "orders" in namespace "sales"
+List snapshots of table "orders"
+Show storage usage for namespace "sales"
+Dry-run expire old snapshots of "sales.orders" keeping 5
+Remove orphan files of table "orders" (dry run first)
+Compact the metadata chain of table "orders"
+Query the first 10 rows of table "sales.orders"
 ```
 
 ### Maintenance & Troubleshooting

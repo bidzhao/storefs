@@ -17,6 +17,7 @@
 - [监控](#监控)
 - [MCP for AI Agent](#mcp-for-ai-agent)
 - [目录搜索](#目录搜索)
+- [湖仓（Iceberg）](#湖仓iceberg)
 - [通知系统](#通知系统)
 - [审计日志](#审计日志)
 - [任务系统](#任务系统)
@@ -47,6 +48,7 @@ StoreFS是一个基于Go语言实现的分布式S3兼容存储系统，采用gos
 - **节点污点标记**：将节点标记为污点（taint）以阻止新数据写入，或重新激活节点——适用于节点维护、磁盘替换或故障排查场景。
 - **事件通知**：基于 Webhook 的桶级别事件通知，当对象创建或删除时自动触发。支持可配置的事件类型、对象键前缀/后缀过滤、HMAC-SHA256 签名验证、指数退避重试，以及原生和 AWS S3 兼容两种负载格式。
 - **目录搜索**：基于 OpenSearch 的全文检索和向量（语义）搜索，覆盖所有存储对象。支持混合搜索、SQL 模式查询、常见文档格式的自动内容提取，以及按权限过滤搜索结果。
+- **湖仓（Iceberg）**：内置基于 Apache Iceberg 的开放格式分析湖仓。提供完整的 Iceberg REST Catalog（命名空间、表、视图、提交、事务）、湖仓维护（快照过期 / 孤儿文件清理 / 元数据压缩）、专属 Web 控制台与 MCP 工具 —— 可直接对接 Apache Spark、Flink、Trino、DuckDB。
 
 ### 核心概念
 
@@ -224,7 +226,7 @@ docker-compose stop
 
 ```bash
 # 清除Docker Compose容器
-docker-compose down
+docker-compose down -v
 rm -rf configs/db-init/
 ```
 
@@ -513,6 +515,30 @@ StoreFS 提供 **目录搜索（Catalog）** 功能，支持对集群中所有�
 ### 文档
 
 详细信息请参考：[目录搜索文档](docs/catalog_cn.md)
+
+## 湖仓（Iceberg）
+
+StoreFS 内置**湖仓（Lakehouse）**：基于 **Apache Iceberg** 构建的开放格式分析数据湖，通过符合规范的 **Iceberg REST Catalog** 对外提供服务。任何 Iceberg 原生引擎 —— Apache Spark、Flink、Trino、DuckDB —— 都可以通过 HTTP 接入，创建命名空间与表、提交事务，并直接通过 StoreFS 的 S3 兼容对象存储读写数据文件。
+
+### 主要特性
+
+- **Iceberg REST Catalog**：完整实现 Iceberg v1 REST 规范 —— 命名空间、表、视图、配置、建表、提交、事务；支持多 Catalog 隔离与动态 warehouse 桶解析
+- **湖仓维护**：快照过期、孤儿文件清理、表（元数据）压缩 —— 全部安全设计并支持 `dry_run`
+- **Web 控制台**：专属 Iceberg 配置、表列表与表详情页面
+- **MCP 工具**：通过自然语言管理 catalog、命名空间与表
+
+### 架构
+
+湖仓完全由 StoreFS 自身提供：
+
+- **REST Catalog（控制面）**：位于管理端口（`:7946`）的 `/api/iceberg/{catalog}/v1/...`；读操作公开，写操作需 Bearer token
+- **对象存储（数据面）**：标准 StoreFS S3 API（`:8901`）存放 Iceberg 元数据（`*.metadata.json`、manifest-list、manifest）与数据（Parquet）文件，位于 warehouse 桶（默认 `lakehouse`）
+- **原生写入路径**：`LazyDispatcherStore` 通过进程内对象层写入 Iceberg 对象，支持动态 warehouse 桶解析
+- **提交引擎**：幂等、恰好一次的提交，原子 CAS 表头切换
+
+### 文档
+
+详细信息请参考：[湖仓文档](docs/lakehouse_cn.md)
 
 ## 通知系统
 

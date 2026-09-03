@@ -217,16 +217,16 @@ CatalogBuilder 还使用对话 LLM 进行以下操作：
 
 ```yaml
 doris:
-  host: "192.168.2.106"
+  host: "<host>"
   port: 9030
   database: "mydb"
   user: "root"
   password: ""
 
 s3:
-  endpoint: "http://192.168.2.106:8901"
-  access_key: "admin-ak"
-  secret_key: "admin-sk"
+  endpoint: "http://<host>:8901"
+  access_key: "<access key>"
+  secret_key: "<secret key>"
   region: "us-east-1"
 
 opensearch:

@@ -149,7 +149,7 @@ PAT 可以绕过 MFA，适用于程序化访问。`storefs_login_with_pat` 工�
 
 ## 功能概览
 
-MCP 服务器提供 **70+ 工具**，分为十一个功能组：
+MCP 服务器提供 **90+ 工具**，分为十二个功能组：
 
 ### 1. 系统工具
 
@@ -205,13 +205,15 @@ MCP 服务器提供 **70+ 工具**，分为十一个功能组：
 | 工具 | 说明 |
 |------|------|
 | `storefs_list_buckets` | 列出桶（支持按用户/分组过滤） |
-| `storefs_get_bucket` | 获取桶的配置详情 |
+| `storefs_get_bucket` | 获取桶的配置详情（按 `bucketId` **或** `bucketName`） |
 | `storefs_create_bucket` | 创建新桶（名称必须全局唯一） |
-| `storefs_update_bucket` | 修改桶配置 |
-| `storefs_delete_bucket` | 删除空桶 |
-| `storefs_generate_presigned_url` | 生成用于上传/下载的预签名 URL |
-| `storefs_get_bucket_acl` | 获取桶 ACL（访问控制列表） |
-| `storefs_put_bucket_acl` | 设置桶 ACL — 控制用户的读/写访问权限 |
+| `storefs_update_bucket` | 修改桶配置（按 `bucketId` **或** `bucketName`） |
+| `storefs_delete_bucket` | 删除空桶（按 `bucketId` **或** `bucketName`） |
+| `storefs_generate_presigned_url` | 生成用于上传/下载的预签名 URL（按 `bucketId` **或** `bucketName`） |
+| `storefs_get_bucket_acl` | 获取桶 ACL（访问控制列表）— 按 `bucketId` **或** `bucketName` |
+| `storefs_put_bucket_acl` | 设置桶 ACL — 控制用户的读/写访问权限（按 `bucketId` **或** `bucketName`） |
+
+> **注意：** 桶工具支持传入 `bucketId`（数字）或 `bucketName`，二者提供其一即可；自然语言场景下用 `bucketName` 更方便（例如 "get bucket lakehouse"）。
 
 ACL 授权对象类型：
 - **canonical_user**: 指定用户（通过用户 ID 标识）
@@ -234,11 +236,11 @@ ACL 权限：`FULL_CONTROL` | `WRITE` | `READ` | `READ_ACP` | `WRITE_ACP`
 
 | 工具 | 说明 |
 |------|------|
-| `storefs_list_objects` | 列出桶内的对象 |
+| `storefs_list_objects` | 列出桶内的对象（按 `bucketId` **或** `bucketName`） |
 | `storefs_get_object_info` | 获取对象在各节点的片段分布信息 |
-| `storefs_get_object_versions` | 列出对象的所有版本 |
-| `storefs_delete_object` | 删除对象（支持指定版本 ID） |
-| `storefs_list_multipart_uploads` | 列出未完成的分块上传 |
+| `storefs_get_object_versions` | 列出对象的所有版本（按 `bucketId` **或** `bucketName`） |
+| `storefs_delete_object` | 删除对象（支持指定版本 ID；按 `bucketId` **或** `bucketName`） |
+| `storefs_list_multipart_uploads` | 列出未完成的分块上传（按 `bucketId` **或** `bucketName`） |
 | `storefs_get_multipart_upload` | 获取分块上传详情及 Part 列表 |
 | `storefs_complete_multipart_upload` | 完成分块上传 |
 | `storefs_abort_multipart_upload` | 取消分块上传 |
@@ -288,9 +290,9 @@ ACL 权限：`FULL_CONTROL` | `WRITE` | `READ` | `READ_ACP` | `WRITE_ACP`
 
 | 工具 | 说明 |
 |------|------|
-| `storefs_list_bucket_notifications` | 列出桶的所有通知配置 |
+| `storefs_list_bucket_notifications` | 列出桶的所有通知配置（按 `bucketId` **或** `bucketName`） |
 | `storefs_get_notification` | 获取单个通知详情 |
-| `storefs_create_notification` | 为桶创建新的 Webhook 通知 |
+| `storefs_create_notification` | 为桶创建新的 Webhook 通知（按 `bucketId` **或** `bucketName`） |
 | `storefs_update_notification` | 更新现有通知配置 |
 | `storefs_delete_notification` | 删除通知配置 |
 | `storefs_test_webhook` | 发送测试事件到 Webhook URL 验证连通性 |
@@ -354,6 +356,37 @@ KMS 提供 **SSE-KMS**（使用 KMS 管理密钥的服务端加密）作为除 S
 - 可选 **Embedding API**（兼容 OpenAI 格式）用于混合搜索
 
 详细文档请参考：[目录搜索文档](catalog_cn.md)。
+
+### 11. 湖仓（Iceberg）工具
+
+通过自然语言管理 StoreFS 湖仓 —— catalog、命名空间、表与维护。这些工具封装了 Iceberg 管理控制面（`/api/iceberg/admin/...`）。
+
+| 工具 | 说明 |
+|------|------|
+| `storefs_iceberg_get_status` | 检查 Iceberg 湖仓功能是否启用 |
+| `storefs_iceberg_enable` | 集群级启用 Iceberg（自动创建 warehouse 桶） |
+| `storefs_iceberg_disable` | 集群级禁用 Iceberg |
+| `storefs_iceberg_get_config` | 获取 Iceberg 配置（启用状态、warehouse 桶、默认命名空间、幂等保留天数、孤儿宽限期） |
+| `storefs_iceberg_set_config` | 更新 Iceberg 配置（所有字段可选） |
+| `storefs_iceberg_list_catalogs` | 列出当前用户可访问的 catalog |
+| `storefs_iceberg_get_catalog` | 获取单个 catalog 详情（warehouse、owner、状态） |
+| `storefs_iceberg_create_catalog` | 在可写的 warehouse（`s3://bucket/prefix/`）上创建 catalog |
+| `storefs_iceberg_delete_catalog` | 软删除 catalog（仅 owner 或 super_admin；须为空） |
+| `storefs_iceberg_list_namespaces` | 列出某 catalog 的命名空间（含表数量） |
+| `storefs_iceberg_list_tables` | 列出命名空间下的表（大小、快照数、最后更新时间） |
+| `storefs_iceberg_get_table` | 获取表详情（location、metadata location、表 UUID） |
+| `storefs_iceberg_get_schema` | 获取表 Schema（字段、类型、是否必填、分区规范） |
+| `storefs_iceberg_list_snapshots` | 列出表的快照历史 |
+| `storefs_iceberg_list_commits` | 列出提交历史（head generation、commit ID、writer） |
+| `storefs_iceberg_storage_usage` | 获取各命名空间存储占用（总/数据/元数据字节与文件数） |
+| `storefs_iceberg_expire_snapshots` | 过期旧快照（支持 `retain_last`、`dry_run`） |
+| `storefs_iceberg_remove_orphan_files` | 清理孤儿文件（支持 `dry_run`） |
+| `storefs_iceberg_compact_metadata` | 压缩元数据链（支持 `dry_run`） |
+| `storefs_iceberg_query` | 用 SQL 查询表数据（`SELECT col1, col2 FROM ...`，通过 Parquet/Arrow） |
+
+所有维护工具（`expire_snapshots`、`remove_orphan_files`、`compact_metadata`）均支持 `dry_run: true` 先预览候选再执行。
+
+湖仓完整说明见：[湖仓文档](lakehouse_cn.md)。
 
 ---
 
@@ -478,6 +511,24 @@ SQL 搜索：SELECT * WHERE object_type='pdf' AND size>=1000000
 启用目录搜索引擎
 测试 OpenSearch 连接
 测试 Embedding API 连接
+```
+
+### 湖仓（Iceberg）
+
+```
+检查 Iceberg 是否启用
+启用 Iceberg 湖仓
+列出所有 catalog
+在 warehouse "s3://analytics-wh/" 上创建 catalog "analytics"
+列出 catalog "lakehouse" 的命名空间
+列出命名空间 "sales" 下的表
+查看命名空间 "sales" 中表 "orders" 的 schema
+列出表 "orders" 的快照
+查看命名空间 "sales" 的存储占用
+预演过期 "sales.orders" 的旧快照，保留 5 个
+清理表 "orders" 的孤儿文件（先 dry run）
+压缩表 "orders" 的元数据链
+查询表 "sales.orders" 的前 10 行
 ```
 
 ### 维护与故障排查

@@ -1,3 +1,5 @@
+**[English](s3.md)**
+
 # S3 API 文档
 
 ## 概要
@@ -465,7 +467,7 @@ Authorization: AWS4-HMAC-SHA256 Credential=<AK>/20230101/us-east-1/s3/aws4_reque
   <Contents>
     <Key>photos/2023/01.jpg</Key>
     <LastModified>2023-01-01T12:00:00Z</LastModified>
-    <ETag>"abc123"</ETag>
+    <ETag>"d41d8cd98f00b204e9800998ecf8427e"</ETag>
     <Size>1024</Size>
     <StorageClass>STANDARD</StorageClass>
     <Owner>
@@ -505,7 +507,7 @@ Authorization: AWS4-HMAC-SHA256 Credential=<AK>/20230101/us-east-1/s3/aws4_reque
   <Contents>
     <Key>photos/2023/01.jpg</Key>
     <LastModified>2023-01-01T12:00:00Z</LastModified>
-    <ETag>"abc123"</ETag>
+    <ETag>"d41d8cd98f00b204e9800998ecf8427e"</ETag>
     <Size>1024</Size>
     <StorageClass>STANDARD</StorageClass>
     <Owner>
@@ -547,7 +549,7 @@ Authorization: AWS4-HMAC-SHA256 Credential=<AK>/20230101/us-east-1/s3/aws4_reque
 **响应**：
 ```http
 HTTP/1.1 200 OK
-ETag: "abc123"
+ETag: "d41d8cd98f00b204e9800998ecf8427e"
 Content-Length: 0
 ```
 
@@ -572,7 +574,7 @@ Authorization: AWS4-HMAC-SHA256 Credential=<AK>/20230101/us-east-1/s3/aws4_reque
 HTTP/1.1 200 OK
 Content-Type: image/jpeg
 Content-Length: 1024
-ETag: "abc123"
+ETag: "d41d8cd98f00b204e9800998ecf8427e"
 Last-Modified: 2023-01-01T12:00:00Z
 
 [object data]
@@ -581,6 +583,53 @@ Last-Modified: 2023-01-01T12:00:00Z
 **错误响应**：
 - 404 Not Found：桶或对象不存在
 - 403 Forbidden：无权限
+
+##### 2.4.1 Range Get（带 Range 头的 GetObject）
+
+`GET` 支持 HTTP `Range` 头进行对象的部分读取（字节区间），遵循 AWS S3 语义。
+
+**请求**：
+```http
+GET /mybucket/photos/2023/01.jpg HTTP/1.1
+Host: 127.0.0.1:8901
+Authorization: AWS4-HMAC-SHA256 Credential=<AK>/20230101/us-east-1/s3/aws4_request, SignedHeaders=..., Signature=...
+Range: bytes=0-1023
+```
+
+**支持的区间形式**：
+
+| 头部 | 说明 |
+|--------|-------------|
+| `bytes=start-end` | 固定区间 —— 从 `start` 到 `end`（含）的字节。`end` 会被收敛到对象大小减 1。 |
+| `bytes=start-` | 开放式 —— 从 `start` 到对象末尾。 |
+| `bytes=-suffix` | 后缀式 —— 对象最后 `suffix` 个字节（大于对象大小时收敛为完整对象）。 |
+
+**响应（206 Partial Content）**：
+```http
+HTTP/1.1 206 Partial Content
+Content-Type: image/jpeg
+Content-Length: 1024
+Content-Range: bytes 0-1023/4096
+Accept-Ranges: bytes
+ETag: "d41d8cd98f00b204e9800998ecf8427e"
+Last-Modified: 2023-01-01T12:00:00Z
+
+[object data — 第 0 到 1023 字节]
+```
+
+行为说明：
+- `GET` 与 `HEAD` 均返回 `Accept-Ranges: bytes`。
+- **多区间**请求（`bytes=0-99,200-299`）**不支持**，按 AWS 语义返回 **`416` Range Not Satisfiable**（`InvalidRange`）。
+- 支持 **`If-Range`**：当校验器（ETag 或 Last-Modified）不匹配时，忽略区间并返回**完整对象**（`200 OK`）。
+- 条件头部（`If-Match`、`If-None-Match`、`If-Modified-Since`、`If-Unmodified-Since`）在区间处理之前评估：`304 Not Modified` / `412 Precondition Failed` 优先。
+
+**错误响应（416）**：
+```http
+HTTP/1.1 416 Range Not Satisfiable
+Content-Range: bytes */4096
+Content-Type: application/xml
+```
+- 出现 416 的情况：对象为空、`start` 超过对象大小、`end < start`、发送多区间列表，或头部格式非法 / 非 `bytes` 单位。
 
 #### 2.5 删除对象（DeleteObject）
 
@@ -658,7 +707,7 @@ Authorization: AWS4-HMAC-SHA256 Credential=<AK>/20230101/us-east-1/s3/aws4_reque
 **响应**：
 ```http
 HTTP/1.1 200 OK
-ETag: "abc123"
+ETag: "d41d8cd98f00b204e9800998ecf8427e"
 Content-Length: 0
 ```
 
@@ -701,13 +750,13 @@ Authorization: AWS4-HMAC-SHA256 Credential=<AK>/20230101/us-east-1/s3/aws4_reque
   <Part>
     <PartNumber>1</PartNumber>
     <LastModified>2023-01-01T12:00:00Z</LastModified>
-    <ETag>"abc123"</ETag>
+    <ETag>"d41d8cd98f00b204e9800998ecf8427e"</ETag>
     <Size>5242880</Size>
   </Part>
   <Part>
     <PartNumber>2</PartNumber>
     <LastModified>2023-01-01T12:05:00Z</LastModified>
-    <ETag>"def456"</ETag>
+    <ETag>"5eb63bbbe01eeed093cb22bb8f5acdc3"</ETag>
     <Size>5242880</Size>
   </Part>
 </ListPartsResult>
@@ -732,11 +781,11 @@ Authorization: AWS4-HMAC-SHA256 Credential=<AK>/20230101/us-east-1/s3/aws4_reque
 <CompleteMultipartUpload>
   <Part>
     <PartNumber>1</PartNumber>
-    <ETag>"abc123"</ETag>
+    <ETag>"d41d8cd98f00b204e9800998ecf8427e"</ETag>
   </Part>
   <Part>
     <PartNumber>2</PartNumber>
-    <ETag>"def456"</ETag>
+    <ETag>"5eb63bbbe01eeed093cb22bb8f5acdc3"</ETag>
   </Part>
 </CompleteMultipartUpload>
 ```
@@ -748,7 +797,7 @@ Authorization: AWS4-HMAC-SHA256 Credential=<AK>/20230101/us-east-1/s3/aws4_reque
   <Location>http://127.0.0.1:8901/mybucket/largefile.zip</Location>
   <Bucket>mybucket</Bucket>
   <Key>largefile.zip</Key>
-  <ETag>"abc123def456"</ETag>
+  <ETag>"09c2a2c5a6c5b7a8a84d3e6f4a2b1c8d"</ETag>
 </CompleteMultipartUploadResult>
 ```
 

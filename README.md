@@ -18,6 +18,7 @@
 - [Monitoring](#monitoring)
 - [MCP for AI Agent](#mcp-for-ai-agent)
 - [Catalog Search](#catalog-search)
+- [Lakehouse (Iceberg)](#lakehouse-iceberg)
 - [Notification System](#notification-system)
 - [Audit Log](#audit-log)
 - [Task System](#task-system)
@@ -48,6 +49,7 @@ This project uses Claude Code to automatically generate all codes and documentat
 - **Node Taint**: Mark nodes as taint to prevent new data writes, or activate them back — useful for node maintenance, disk replacement, or troubleshooting scenarios.
 - **Event Notifications**: Webhook-based event notifications for bucket-level object creation and deletion events. Supports configurable event types, object key prefix/suffix filters, HMAC-SHA256 signature verification, exponential backoff retry, and both native and AWS S3-compatible payload formats.
 - **Catalog Search**: Full-text and vector (semantic) search across all stored objects, backed by OpenSearch. Includes hybrid search, SQL-like queries, automatic content extraction from common document formats, and permission-aware result filtering.
+- **Lakehouse (Iceberg)**: Built-in open-format analytics lakehouse powered by Apache Iceberg. A full Iceberg REST Catalog (namespaces, tables, views, commits, transactions), lakehouse maintenance (snapshot expiration / orphan cleanup / compaction), a dedicated Web console, and MCP tools — connect Apache Spark, Flink, Trino or DuckDB directly.
 
 ### Core Concepts
 
@@ -227,7 +229,7 @@ docker-compose stop
 
 ```bash
 # Clear Docker Compose containers
-docker-compose down
+docker-compose down -v
 rm -rf configs/db-init/
 ```
 
@@ -516,6 +518,29 @@ The catalog consists of three components:
 ### Documentation
 
 For detailed information, please refer to: [Catalog Search Documentation](docs/catalog.md)
+
+## Lakehouse (Iceberg)
+
+StoreFS includes a built-in **lakehouse**: an open-format analytics data lake built on **Apache Iceberg**, served through a standards-compliant **Iceberg REST Catalog**. Any Iceberg-native engine — Apache Spark, Flink, Trino, DuckDB — can connect over HTTP, create namespaces and tables, commit transactions, and read/write data files directly against StoreFS's S3-compatible object storage.
+
+### Key Features
+
+- **Iceberg REST Catalog**: Full implementation of the Iceberg v1 REST spec — namespaces, tables, views, config, create table, commits, transactions, and views; multi-catalog isolation with dynamic warehouse-bucket resolution
+- **Lakehouse Maintenance**: Expire snapshots, orphan file cleanup, and table (metadata) compaction — all safe-by-design with `dry_run`
+- **Web Console**: Dedicated Iceberg config, table list, and table detail pages
+- **MCP Tools**: Manage catalogs, namespaces, and tables through natural language
+
+### Architecture
+
+The lakehouse is served entirely by StoreFS itself:
+- **REST Catalog (control plane)**: Exposed on the Admin port (`:7946`) at `/api/iceberg/{catalog}/v1/...`; reads are public, writes need a Bearer token
+- **Object storage (data plane)**: Standard StoreFS S3 API (`:8901`) holds the Iceberg metadata (`*.metadata.json`, manifest-lists, manifests) and data (Parquet) files in the warehouse bucket (default `lakehouse`)
+- **Native write path**: `LazyDispatcherStore` writes Iceberg objects through the in-process object layer, with dynamic warehouse-bucket resolution
+- **Commit engine**: Idempotent, exactly-once commits with atomic CAS head transitions
+
+### Documentation
+
+For detailed information, please refer to: [Lakehouse Documentation](docs/lakehouse.md)
 
 ## Notification System
 

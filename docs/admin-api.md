@@ -729,7 +729,7 @@ Authorization: Bearer <token>
 
 #### 4.2 Get Bucket
 
-**URL**: `GET /api/buckets/:id`
+**URL**: `GET /api/buckets/:id-or-name`
 
 **Request Header**:
 ```http
@@ -792,7 +792,7 @@ Authorization: Bearer <token>
 
 #### 4.4 Update Bucket
 
-**URL**: `PUT /api/buckets/:id`
+**URL**: `PUT /api/buckets/:id-or-name`
 
 **Request Header**:
 ```http
@@ -821,7 +821,7 @@ Authorization: Bearer <token>
 
 #### 4.5 Delete Bucket
 
-**URL**: `DELETE /api/buckets/:id`
+**URL**: `DELETE /api/buckets/:id-or-name`
 
 **Request Header**:
 ```http
@@ -839,7 +839,7 @@ Authorization: Bearer <token>
 
 #### 4.6 Get Bucket ACL
 
-**URL**: `GET /api/buckets/:id/acl`
+**URL**: `GET /api/buckets/:id-or-name/acl`
 
 **Request Header**:
 ```http
@@ -880,7 +880,7 @@ Authorization: Bearer <token>
 
 #### 4.7 Set Bucket ACL
 
-**URL**: `PUT /api/buckets/:id/acl`
+**URL**: `PUT /api/buckets/:id-or-name/acl`
 
 **Request Header**:
 ```http
@@ -926,7 +926,7 @@ Content-Type: application/json
 
 ##### 4.8.1 List Bucket Notifications
 
-**URL**: `GET /api/buckets/:id/notifications`
+**URL**: `GET /api/buckets/:id-or-name/notifications`
 
 **Required Permission**: `READ` or `FULL_CONTROL` on the bucket
 
@@ -960,7 +960,7 @@ Authorization: Bearer <token>
 
 ##### 4.8.2 Create Bucket Notification
 
-**URL**: `POST /api/buckets/:id/notifications`
+**URL**: `POST /api/buckets/:id-or-name/notifications`
 
 **Required Permission**: `WRITE` or `FULL_CONTROL` on the bucket
 
@@ -1027,7 +1027,7 @@ For detailed documentation, refer to: [Notification Documentation](notification.
 
 ##### 4.9.1 Get Bucket Lifecycle Rules
 
-**URL**: `GET /api/buckets/:id/lifecycle`
+**URL**: `GET /api/buckets/:id-or-name/lifecycle`
 
 **Required Permission**: `READ` or `FULL_CONTROL` on the bucket
 
@@ -1054,7 +1054,7 @@ Authorization: Bearer <token>
 
 ##### 4.9.2 Set Bucket Lifecycle Rules
 
-**URL**: `PUT /api/buckets/:id/lifecycle`
+**URL**: `PUT /api/buckets/:id-or-name/lifecycle`
 
 **Required Permission**: `WRITE` or `FULL_CONTROL` on the bucket
 
@@ -1082,7 +1082,7 @@ Content-Type: application/json
 
 ##### 4.9.3 Delete Bucket Lifecycle Rules
 
-**URL**: `DELETE /api/buckets/:id/lifecycle`
+**URL**: `DELETE /api/buckets/:id-or-name/lifecycle`
 
 **Required Permission**: `WRITE` or `FULL_CONTROL` on the bucket
 
@@ -1142,7 +1142,7 @@ Content-Type: application/json
 
 #### 5.1 List Objects in Bucket
 
-**URL**: `GET /api/buckets/:id/objects`
+**URL**: `GET /api/buckets/:id-or-name/objects`
 
 **Request Parameters**:
 - `page` (optional): Page number, default 1
@@ -1179,7 +1179,7 @@ Authorization: Bearer <token>
 
 #### 5.2 Delete Object
 
-**URL**: `DELETE /api/buckets/:id/objects/:name`
+**URL**: `DELETE /api/buckets/:id-or-name/objects/:name`
 
 **Request Header**:
 ```http
@@ -1195,7 +1195,7 @@ Authorization: Bearer <token>
 
 #### 5.3 Generate Presigned URL
 
-**URL**: `POST /api/buckets/:id/s3-presigned-url`
+**URL**: `POST /api/buckets/:id-or-name/s3-presigned-url`
 
 **Request Header**:
 ```http
@@ -2008,6 +2008,492 @@ Authorization: Bearer <token>
 **Error Responses**:
 - 404 Not Found: Key does not exist
 - 503 Service Unavailable: KMS client not initialized
+
+### 10. Iceberg Lakehouse Management
+
+The Iceberg lakehouse control plane is exposed under `/api/iceberg/admin/...`. All endpoints require authentication (`Authorization: Bearer <token>`), except the Iceberg REST catalog itself (see below). The REST catalog (`/api/iceberg/{catalog}/v1/...`) is a full implementation of the Iceberg v1 REST spec — see the [Lakehouse Documentation](lakehouse.md).
+
+#### 10.1 Iceberg Status
+
+**URL**: `GET /api/iceberg/admin/status`
+
+Returns whether the Iceberg feature is enabled (cluster-wide).
+
+**Response**:
+```json
+{
+  "enabled": true
+}
+```
+
+#### 10.2 Iceberg Config
+
+**URL**: `GET /api/iceberg/admin/config`
+
+**Response**:
+```json
+{
+  "enabled": true,
+  "warehouse_bucket": "lakehouse",
+  "default_namespace": "default",
+  "idempotency_retention_days": 7,
+  "orphan_grace_period_hours": 168
+}
+```
+
+**URL**: `PUT /api/iceberg/admin/config`
+
+Updates the cluster-wide Iceberg configuration. All fields are optional.
+
+**Request**:
+```json
+{
+  "enabled": true,
+  "warehouse_bucket": "lakehouse",
+  "default_namespace": "default",
+  "idempotency_retention_days": 7,
+  "orphan_grace_period_hours": 72
+}
+```
+
+#### 10.3 Enable / Disable Iceberg
+
+**URL**: `POST /api/iceberg/admin/enable`
+
+Enables Iceberg cluster-wide and **auto-creates the warehouse bucket** if it does not exist (owned by the enabling user).
+
+**Response**:
+```json
+{
+  "status": "ok",
+  "message": "iceberg enabled"
+}
+```
+
+**URL**: `POST /api/iceberg/admin/disable`
+
+Disables Iceberg cluster-wide.
+
+**Response**:
+```json
+{
+  "status": "ok",
+  "message": "iceberg disabled"
+}
+```
+
+#### 10.4 Catalog Management (multi-catalog)
+
+##### 10.4.1 List Catalogs
+
+**URL**: `GET /api/iceberg/admin/catalogs`
+
+Returns the catalogs the logged-in user may access (owned catalogs + catalogs whose warehouse bucket the user can read).
+
+**Response**:
+```json
+{
+  "catalogs": [
+    {
+      "name": "default",
+      "warehouse": "s3://lakehouse/",
+      "owner_id": 1,
+      "status": "ACTIVE",
+      "properties": {},
+      "created_at": "2026-08-01 10:00:00"
+    }
+  ]
+}
+```
+
+##### 10.4.2 Get Catalog
+
+**URL**: `GET /api/iceberg/admin/catalogs/{name}`
+
+##### 10.4.3 Create Catalog
+
+**URL**: `POST /api/iceberg/admin/catalogs`
+
+**Request**:
+```json
+{
+  "name": "analytics",
+  "warehouse": "s3://analytics-wh/",
+  "properties": {}
+}
+```
+
+Notes:
+- Catalog names: lowercase `^[a-zA-Z][a-zA-Z0-9_-]{0,63}$`.
+- The warehouse must be an `s3://` URI on a bucket the user can **write**.
+- A deleted catalog name is never reused.
+
+##### 10.4.4 Delete Catalog
+
+**URL**: `DELETE /api/iceberg/admin/catalogs/{name}`
+
+Only the owner (or `super_admin`) may delete. Refuses if the catalog still has namespaces. Soft-delete lifecycle: `ACTIVE` → `DELETING` → `DELETED`.
+
+#### 10.5 Namespace Management
+
+##### 10.5.1 List Namespaces
+
+**URL**: `GET /api/iceberg/admin/namespaces?catalog=<catalog>`
+
+**Response**:
+```json
+{
+  "catalog": "lakehouse",
+  "namespaces": [
+    {
+      "name": "sales",
+      "id": 1,
+      "location": "s3://lakehouse/sales",
+      "catalog": "lakehouse",
+      "table_count": 3
+    }
+  ]
+}
+```
+
+#### 10.6 Table Management
+
+##### 10.6.1 List Tables
+
+**URL**: `GET /api/iceberg/admin/tables?namespace=<ns>&catalog=<catalog>`
+
+Returns tables with derived info from the head metadata: size (cumulative added-files size), snapshot count, snapshot id, head generation, metadata location, last updated.
+
+**Response**:
+```json
+{
+  "catalog": "lakehouse",
+  "namespace": "sales",
+  "tables": [
+    {
+      "name": "orders",
+      "namespace": "sales",
+      "table_id": 1,
+      "table_uuid": "abc-123",
+      "location": "s3://lakehouse/sales/orders",
+      "metadata_location": "s3://lakehouse/sales/orders/metadata/.../....metadata.json",
+      "head_generation": 5,
+      "snapshot_id": 100,
+      "snapshot_count": 5,
+      "size": 102400,
+      "metadata_version": 0,
+      "last_updated_ms": 1754025600000
+    }
+  ]
+}
+```
+
+##### 10.6.2 Get Table
+
+**URL**: `GET /api/iceberg/admin/tables/{name}?namespace=<ns>&catalog=<catalog>`
+
+**Response**:
+```json
+{
+  "name": "orders",
+  "namespace": "sales",
+  "catalog": "lakehouse",
+  "table_id": 1,
+  "table_uuid": "abc-123",
+  "location": "s3://lakehouse/sales/orders",
+  "metadata_location": "s3://lakehouse/sales/orders/metadata/.../....metadata.json"
+}
+```
+
+##### 10.6.3 Get Table Schema
+
+**URL**: `GET /api/iceberg/admin/tables/{name}/schema?namespace=<ns>&catalog=<catalog>`
+
+Returns all schemas (with current schema id), partition specs, and format version. Nested types (struct/list/map) are rendered recursively.
+
+**Response**:
+```json
+{
+  "table": "orders",
+  "namespace": "sales",
+  "current-schema-id": 0,
+  "schemas": [
+    {
+      "schema-id": 0,
+      "fields": [
+        {"id": 1, "name": "order_id", "type": "long", "required": true},
+        {"id": 2, "name": "customer", "type": "string", "required": true}
+      ]
+    }
+  ],
+  "format-version": 2,
+  "partition-specs": [
+    {"spec-id": 0, "fields": []}
+  ]
+}
+```
+
+##### 10.6.4 Get Table Snapshots
+
+**URL**: `GET /api/iceberg/admin/tables/{name}/snapshots?namespace=<ns>&catalog=<catalog>&page=<n>&page_size=<n>`
+
+Server-side paginated snapshot history (newest first). Default `page=1`, `page_size=20` (max 1000).
+
+**Response**:
+```json
+{
+  "table": "orders",
+  "namespace": "sales",
+  "snapshots": [
+    {
+      "snapshot-id": 100,
+      "timestamp-ms": 1754025600000,
+      "sequence-number": 4,
+      "summary": {"operation": "append"},
+      "manifest-list": "s3://lakehouse/sales/orders/metadata/.../manifest-list.avro"
+    }
+  ],
+  "refs": {"main": {"snapshot-id": 100}},
+  "total": 5,
+  "page": 1,
+  "page_size": 20
+}
+```
+
+##### 10.6.5 Get Table Commit History
+
+**URL**: `GET /api/iceberg/admin/tables/{name}/commits?namespace=<ns>&catalog=<catalog>`
+
+Returns the actual commit history from `iceberg_commits` (populated by the atomic head CAS).
+
+**Response**:
+```json
+{
+  "table": "orders",
+  "namespace": "sales",
+  "catalog": "lakehouse",
+  "head_generation": 5,
+  "commit_count": 5,
+  "commits": [
+    {
+      "commit_id": "uuid",
+      "attempt_id": "uuid",
+      "head_generation": 5,
+      "base_head_generation": 4,
+      "base_metadata_location": "s3://.../00004.metadata.json",
+      "metadata_location": "s3://.../00005.metadata.json",
+      "writer_id": "storefs",
+      "status": "committed",
+      "created_at": "2026-08-01 10:00:00"
+    }
+  ]
+}
+```
+
+#### 10.7 Storage Usage
+
+**URL**: `GET /api/iceberg/admin/storage-usage?namespace=<ns>&catalog=<catalog>`
+
+Returns storage usage per namespace (and optionally per table). `namespace` is optional — without it, all namespaces are scanned. Results may be marked `approximate` when the object scan exceeds 100,000 objects.
+
+**Response**:
+```json
+{
+  "namespaces": [
+    {
+      "namespace": "sales",
+      "total_bytes": 204800,
+      "total_files": 10,
+      "tables": [
+        {
+          "table_name": "orders",
+          "total_bytes": 102400,
+          "total_files": 5,
+          "data_bytes": 100000,
+          "data_files": 3,
+          "metadata_bytes": 2400,
+          "metadata_files": 2
+        }
+      ],
+      "approximate": false
+    }
+  ],
+  "total_bytes": 204800,
+  "total_files": 10,
+  "approximate": false
+}
+```
+
+#### 10.8 Lakehouse Maintenance
+
+All maintenance operations are safe-by-design and support `dry_run` to preview before acting. See the [Lakehouse Documentation](lakehouse.md) for full semantics.
+
+##### 10.8.1 Expire Snapshots
+
+**URL**: `POST /api/iceberg/admin/tables/{name}/expire?namespace=<ns>&catalog=<catalog>`
+
+**Request**:
+```json
+{
+  "retain_last": 5,
+  "dry_run": true
+}
+```
+
+Expiration is refs-aware: it retains everything reachable from `main`/branches/tags plus the ancestor chain and the last `retain_last` snapshots. Only unreachable snapshots are candidates. When `dry_run` is false, the head is advanced atomically (CAS) and the expired manifest-lists are then deleted.
+
+**Response**:
+```json
+{
+  "table": "orders",
+  "namespace": "sales",
+  "dry_run": true,
+  "candidates": [
+    {"snapshot_id": 90, "sequence_number": 2, "timestamp_ms": 1754025600000, "operation": "append", "manifest_list": "s3://.../manifest-list.avro"}
+  ],
+  "count": 1,
+  "deleted": []
+}
+```
+
+##### 10.8.2 Remove Orphan Files
+
+**URL**: `POST /api/iceberg/admin/tables/{name}/orphan?namespace=<ns>&catalog=<catalog>`
+
+**Request**:
+```json
+{
+  "dry_run": true
+}
+```
+
+A candidate file must be (a) not reachable from any retained snapshot and (b) older than the orphan grace period (default 7 days). If the reachable set cannot be built, **nothing** is deleted (fail-closed).
+
+**Response**:
+```json
+{
+  "table": "orders",
+  "namespace": "sales",
+  "dry_run": true,
+  "candidates": [
+    {"key": "sales/orders/data/orphan.parquet", "size": 1024, "last_modified": "2026-07-20T10:00:00Z"}
+  ],
+  "count": 1,
+  "total_size": 1024,
+  "deleted": []
+}
+```
+
+##### 10.8.3 Compact Metadata
+
+**URL**: `POST /api/iceberg/admin/tables/{name}/compact-metadata?namespace=<ns>&catalog=<catalog>`
+
+**Request**:
+```json
+{
+  "dry_run": false
+}
+```
+
+Rewrites the metadata chain to a single new immutable `metadata.json` and drops the old metadata-log files after the head CAS succeeds.
+
+**Response**:
+```json
+{
+  "table": "orders",
+  "namespace": "sales",
+  "dry_run": false,
+  "chain": {"current_version": 0, "chain_length": 5, "oldest_timestamp_ms": 1754025600000, "newest_timestamp_ms": 1754112000000},
+  "compacted": true,
+  "deleted_old_metadata": 4
+}
+```
+
+#### 10.9 Iceberg Query
+
+**URL**: `POST /api/iceberg/admin/query`
+
+Runs a real Parquet query (Arrow) over the table's current snapshot data files.
+
+**Request**:
+```json
+{
+  "sql": "SELECT order_id, customer FROM orders",
+  "namespace": "sales",
+  "table": "orders",
+  "limit": 100
+}
+```
+
+**Response**:
+```json
+{
+  "columns": [
+    {"name": "order_id", "type": "long"},
+    {"name": "customer", "type": "string"}
+  ],
+  "rows": [
+    {"order_id": 1, "customer": "alice"},
+    {"order_id": 2, "customer": "bob"}
+  ],
+  "row_count": 2
+}
+```
+
+#### 10.10 Iceberg REST Catalog (metadata endpoints)
+
+The Iceberg REST catalog is exposed at `/api/iceberg/{catalog}/v1/...` on the same Admin port. It is a full implementation of the Iceberg v1 REST spec (namespaces, tables, views, config, create/commit/transaction, register, credentials, sign, and v2 scan planning). **Reads (GET/HEAD) are public; writes (POST/DELETE) require `Authorization: Bearer <token>`.**
+
+| Operation | Method & Path |
+|-----------|---------------|
+| Health | `GET /api/iceberg/health` |
+| Config | `GET /api/iceberg/{catalog}/v1/config` |
+| List namespaces | `GET /api/iceberg/{catalog}/v1/namespaces` |
+| Create namespace | `POST /api/iceberg/{catalog}/v1/namespaces` |
+| Load namespace | `GET /api/iceberg/{catalog}/v1/namespaces/{ns}` |
+| Namespace exists | `HEAD /api/iceberg/{catalog}/v1/namespaces/{ns}` |
+| Drop namespace | `DELETE /api/iceberg/{catalog}/v1/namespaces/{ns}[?force=true]` |
+| Update namespace properties | `POST /api/iceberg/{catalog}/v1/namespaces/{ns}/properties` |
+| List tables | `GET /api/iceberg/{catalog}/v1/namespaces/{ns}/tables` |
+| Create table | `POST /api/iceberg/{catalog}/v1/namespaces/{ns}/tables` |
+| Load table | `GET /api/iceberg/{catalog}/v1/namespaces/{ns}/tables/{t}` |
+| Table exists | `HEAD /api/iceberg/{catalog}/v1/namespaces/{ns}/tables/{t}` |
+| Commit table | `POST /api/iceberg/{catalog}/v1/namespaces/{ns}/tables/{t}` |
+| Drop table | `DELETE /api/iceberg/{catalog}/v1/namespaces/{ns}/tables/{t}[?purgeRequested=true]` |
+| Rename table | `POST /api/iceberg/{catalog}/v1/tables/rename` |
+| Register table | `POST /api/iceberg/{catalog}/v1/namespaces/{ns}/register` |
+| Unregister table | `POST /api/iceberg/{catalog}/v1/namespaces/{ns}/tables/{t}/unregister` |
+| Table credentials | `GET /api/iceberg/{catalog}/v1/namespaces/{ns}/tables/{t}/credentials` |
+| Sign request | `POST /api/iceberg/{catalog}/v1/namespaces/{ns}/tables/{t}/sign` |
+| Report metrics | `POST /api/iceberg/{catalog}/v1/namespaces/{ns}/tables/{t}/metrics` |
+| Transaction commit | `POST /api/iceberg/{catalog}/v1/transactions/commit` |
+| List views | `GET /api/iceberg/{catalog}/v1/namespaces/{ns}/views` |
+| Create view | `POST /api/iceberg/{catalog}/v1/namespaces/{ns}/views` |
+| Load view | `GET /api/iceberg/{catalog}/v1/namespaces/{ns}/views/{v}` |
+| Replace view | `POST /api/iceberg/{catalog}/v1/namespaces/{ns}/views/{v}` |
+| Drop view | `DELETE /api/iceberg/{catalog}/v1/namespaces/{ns}/views/{v}` |
+| Rename view | `POST /api/iceberg/{catalog}/v1/views/rename` |
+| Register view | `POST /api/iceberg/{catalog}/v1/namespaces/{ns}/register-view` |
+| Scan planning | `POST /api/iceberg/{catalog}/v1/namespaces/{ns}/tables/{t}/plan` / `GET`/`DELETE /plan/{id}` / `POST /tasks` |
+
+> There is no implicit catalog. Every catalog is created explicitly via the admin catalog endpoints (section 10.4) and pins its own warehouse root.
+
+### 11. Bucket Fingerprint in Paths
+
+Several bucket endpoints accept a **bucket reference** in the path that may be either the numeric bucket **ID** or the bucket **name**:
+
+- `/api/buckets/{id}` and subresources: `GET`/`PUT`/`DELETE /api/buckets/{ref}` (bucket config)
+- `/api/buckets/{ref}/acl` (`GET`/`PUT`)
+- `/api/buckets/{ref}/notifications` and `/notifications/{nid}`
+- `/api/buckets/{ref}/lifecycle`
+- `/api/buckets/{ref}/objects`, `/objects/versions`, `/objects/check/incompleted`
+- `/api/buckets/{ref}/multipart-uploads`
+
+Resolution rules:
+1. If the path segment is numeric and a bucket with that **ID** exists, it is used.
+2. Otherwise the segment is treated as a bucket **name** and resolved via name lookup (this also handles all-numeric bucket names).
+
+This change applies to: bucket config, ACL, notification, lifecycle, object listing/deletion/versions, and multipart upload listing endpoints. Endpoint paths in this document that previously showed `:id` now also accept a bucket name.
 
 ## Error Response Format
 

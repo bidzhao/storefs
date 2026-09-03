@@ -1,6 +1,6 @@
 services:
   node1:
-    image: bidzhao/storefs:0.5.0
+    image: bidzhao/storefs:0.5.1
     container_name: storefs-node1
     restart: unless-stopped
     networks:
@@ -34,7 +34,7 @@ services:
         max-file: "3"
 
   node2:
-    image: bidzhao/storefs:0.5.0
+    image: bidzhao/storefs:0.5.1
     container_name: storefs-node2
     restart: unless-stopped
     networks:
@@ -64,7 +64,7 @@ services:
         max-file: "3"
 
   node3:
-    image: bidzhao/storefs:0.5.0
+    image: bidzhao/storefs:0.5.1
     container_name: storefs-node3
     restart: unless-stopped
     networks:
@@ -172,6 +172,7 @@ services:
     volumes:
       - ./configs/init.sql:/init.sql
       - ./configs/catalog.sql:/catalog.sql
+      - ./configs/iceberg.sql:/iceberg.sql
       - ./configs/db-init:/init-done
 
     environment:
@@ -225,10 +226,17 @@ services:
         
         echo "Doris SQL is ready."
 
+        if [ -f /init-done/.done ]; then
+            echo "DB already initialized, skipping..."
+            exit 0
+        fi
+
         echo "Running init.sql..."
         /usr/bin/mariadb -h doris-fe -P9030 -uroot < /init.sql
         echo "Running catalog.sql..."
         /usr/bin/mariadb -h doris-fe -P9030 -uroot < /catalog.sql
+        echo "Running iceberg.sql..."
+        /usr/bin/mariadb -h doris-fe -P9030 -uroot < /iceberg.sql
 
         echo "Marking init done..."
         touch /init-done/.done

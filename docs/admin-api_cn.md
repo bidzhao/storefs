@@ -731,7 +731,7 @@ Authorization: Bearer <token>
 
 #### 4.2 获取桶详情（Get Bucket）
 
-**URL**：`GET /api/buckets/:id`
+**URL**：`GET /api/buckets/:id-or-name`
 
 **请求头**：
 ```http
@@ -794,7 +794,7 @@ Authorization: Bearer <token>
 
 #### 4.4 更新桶（Update Bucket）
 
-**URL**：`PUT /api/buckets/:id`
+**URL**：`PUT /api/buckets/:id-or-name`
 
 **请求头**：
 ```http
@@ -823,7 +823,7 @@ Authorization: Bearer <token>
 
 #### 4.5 删除桶（Delete Bucket）
 
-**URL**：`DELETE /api/buckets/:id`
+**URL**：`DELETE /api/buckets/:id-or-name`
 
 **请求头**：
 ```http
@@ -841,7 +841,7 @@ Authorization: Bearer <token>
 
 #### 4.6 获取桶 ACL（Get Bucket ACL）
 
-**URL**：`GET /api/buckets/:id/acl`
+**URL**：`GET /api/buckets/:id-or-name/acl`
 
 **请求头**：
 ```http
@@ -882,7 +882,7 @@ Authorization: Bearer <token>
 
 #### 4.7 设置桶 ACL（Set Bucket ACL）
 
-**URL**：`PUT /api/buckets/:id/acl`
+**URL**：`PUT /api/buckets/:id-or-name/acl`
 
 **请求头**：
 ```http
@@ -928,7 +928,7 @@ Content-Type: application/json
 
 ##### 4.8.1 列出桶通知
 
-**URL**：`GET /api/buckets/:id/notifications`
+**URL**：`GET /api/buckets/:id-or-name/notifications`
 
 **所需权限**：对桶有 `READ` 权限
 
@@ -957,7 +957,7 @@ Content-Type: application/json
 
 ##### 4.8.2 创建桶通知
 
-**URL**：`POST /api/buckets/:id/notifications`
+**URL**：`POST /api/buckets/:id-or-name/notifications`
 
 **所需权限**：对桶有 `WRITE` 或 `FULL_CONTROL` 权限
 
@@ -1018,7 +1018,7 @@ Content-Type: application/json
 
 #### 5.1 获取桶中的对象列表（List Objects in Bucket）
 
-**URL**：`GET /api/buckets/:id/objects`
+**URL**：`GET /api/buckets/:id-or-name/objects`
 
 **请求参数**：
 - `page`（可选）：页码，默认 1
@@ -1055,7 +1055,7 @@ Authorization: Bearer <token>
 
 #### 5.2 删除对象（Delete Object）
 
-**URL**：`DELETE /api/buckets/:id/objects/:name`
+**URL**：`DELETE /api/buckets/:id-or-name/objects/:name`
 
 **请求头**：
 ```http
@@ -1071,7 +1071,7 @@ Authorization: Bearer <token>
 
 #### 5.3 生成预签名 URL（Generate Presigned URL）
 
-**URL**：`POST /api/buckets/:id/s3-presigned-url`
+**URL**：`POST /api/buckets/:id-or-name/s3-presigned-url`
 
 **请求头**：
 ```http
@@ -1850,6 +1850,492 @@ Authorization: Bearer <token>
 **错误响应**：
 - 404 Not Found：密钥不存在
 - 503 Service Unavailable：KMS 客户端未初始化
+
+### 10. Iceberg 湖仓管理
+
+Iceberg 湖仓控制面挂在 `/api/iceberg/admin/...` 下。除 Iceberg REST Catalog 本身（见下文）外，所有端点均需认证（`Authorization: Bearer <token>`）。REST Catalog（`/api/iceberg/{catalog}/v1/...`）是 Iceberg v1 REST 规范的完整实现 —— 详见 [湖仓文档](lakehouse_cn.md)。
+
+#### 10.1 获取 Iceberg 状态
+
+**URL**：`GET /api/iceberg/admin/status`
+
+返回 Iceberg 功能是否启用（集群级）。
+
+**响应**：
+```json
+{
+  "enabled": true
+}
+```
+
+#### 10.2 Iceberg 配置
+
+**URL**：`GET /api/iceberg/admin/config`
+
+**响应**：
+```json
+{
+  "enabled": true,
+  "warehouse_bucket": "lakehouse",
+  "default_namespace": "default",
+  "idempotency_retention_days": 7,
+  "orphan_grace_period_hours": 168
+}
+```
+
+**URL**：`PUT /api/iceberg/admin/config`
+
+更新集群级 Iceberg 配置。所有字段均可选。
+
+**请求**：
+```json
+{
+  "enabled": true,
+  "warehouse_bucket": "lakehouse",
+  "default_namespace": "default",
+  "idempotency_retention_days": 7,
+  "orphan_grace_period_hours": 72
+}
+```
+
+#### 10.3 启用 / 禁用 Iceberg
+
+**URL**：`POST /api/iceberg/admin/enable`
+
+集群级启用 Iceberg，并在 warehouse 桶不存在时**自动创建**（归属启用用户）。
+
+**响应**：
+```json
+{
+  "status": "ok",
+  "message": "iceberg enabled"
+}
+```
+
+**URL**：`POST /api/iceberg/admin/disable`
+
+集群级禁用 Iceberg。
+
+**响应**：
+```json
+{
+  "status": "ok",
+  "message": "iceberg disabled"
+}
+```
+
+#### 10.4 Catalog 管理（多 Catalog）
+
+##### 10.4.1 列出 Catalog
+
+**URL**：`GET /api/iceberg/admin/catalogs`
+
+返回当前用户可访问的 catalog（本人拥有的 + 其 warehouse 桶可读的）。
+
+**响应**：
+```json
+{
+  "catalogs": [
+    {
+      "name": "default",
+      "warehouse": "s3://lakehouse/",
+      "owner_id": 1,
+      "status": "ACTIVE",
+      "properties": {},
+      "created_at": "2026-08-01 10:00:00"
+    }
+  ]
+}
+```
+
+##### 10.4.2 获取 Catalog
+
+**URL**：`GET /api/iceberg/admin/catalogs/{name}`
+
+##### 10.4.3 创建 Catalog
+
+**URL**：`POST /api/iceberg/admin/catalogs`
+
+**请求**：
+```json
+{
+  "name": "analytics",
+  "warehouse": "s3://analytics-wh/",
+  "properties": {}
+}
+```
+
+注意事项：
+- Catalog 名称：小写 `^[a-zA-Z][a-zA-Z0-9_-]{0,63}$`。
+- warehouse 必须是用户**可写**桶上的 `s3://` URI。
+- 已删除的 catalog 名称永不复用。
+
+##### 10.4.4 删除 Catalog
+
+**URL**：`DELETE /api/iceberg/admin/catalogs/{name}`
+
+仅 owner（或 `super_admin`）可删除。若 catalog 仍有命名空间则拒绝。软删除生命周期：`ACTIVE` → `DELETING` → `DELETED`。
+
+#### 10.5 命名空间管理
+
+##### 10.5.1 列出命名空间
+
+**URL**：`GET /api/iceberg/admin/namespaces?catalog=<catalog>`
+
+**响应**：
+```json
+{
+  "catalog": "lakehouse",
+  "namespaces": [
+    {
+      "name": "sales",
+      "id": 1,
+      "location": "s3://lakehouse/sales",
+      "catalog": "lakehouse",
+      "table_count": 3
+    }
+  ]
+}
+```
+
+#### 10.6 表管理
+
+##### 10.6.1 列出表
+
+**URL**：`GET /api/iceberg/admin/tables?namespace=<ns>&catalog=<catalog>`
+
+返回表及其表头元数据派生信息：大小（各快照累计新增文件大小）、快照数、快照 id、head generation、元数据位置、最后更新时间。
+
+**响应**：
+```json
+{
+  "catalog": "lakehouse",
+  "namespace": "sales",
+  "tables": [
+    {
+      "name": "orders",
+      "namespace": "sales",
+      "table_id": 1,
+      "table_uuid": "abc-123",
+      "location": "s3://lakehouse/sales/orders",
+      "metadata_location": "s3://lakehouse/sales/orders/metadata/.../....metadata.json",
+      "head_generation": 5,
+      "snapshot_id": 100,
+      "snapshot_count": 5,
+      "size": 102400,
+      "metadata_version": 0,
+      "last_updated_ms": 1754025600000
+    }
+  ]
+}
+```
+
+##### 10.6.2 获取表
+
+**URL**：`GET /api/iceberg/admin/tables/{name}?namespace=<ns>&catalog=<catalog>`
+
+**响应**：
+```json
+{
+  "name": "orders",
+  "namespace": "sales",
+  "catalog": "lakehouse",
+  "table_id": 1,
+  "table_uuid": "abc-123",
+  "location": "s3://lakehouse/sales/orders",
+  "metadata_location": "s3://lakehouse/sales/orders/metadata/.../....metadata.json"
+}
+```
+
+##### 10.6.3 获取表 Schema
+
+**URL**：`GET /api/iceberg/admin/tables/{name}/schema?namespace=<ns>&catalog=<catalog>`
+
+返回全部 schema（含当前 schema id）、分区规范与格式版本。嵌套类型（struct/list/map）递归渲染。
+
+**响应**：
+```json
+{
+  "table": "orders",
+  "namespace": "sales",
+  "current-schema-id": 0,
+  "schemas": [
+    {
+      "schema-id": 0,
+      "fields": [
+        {"id": 1, "name": "order_id", "type": "long", "required": true},
+        {"id": 2, "name": "customer", "type": "string", "required": true}
+      ]
+    }
+  ],
+  "format-version": 2,
+  "partition-specs": [
+    {"spec-id": 0, "fields": []}
+  ]
+}
+```
+
+##### 10.6.4 获取表快照
+
+**URL**：`GET /api/iceberg/admin/tables/{name}/snapshots?namespace=<ns>&catalog=<catalog>&page=<n>&page_size=<n>`
+
+服务端分页的快照历史（最新优先）。默认 `page=1`、`page_size=20`（最大 1000）。
+
+**响应**：
+```json
+{
+  "table": "orders",
+  "namespace": "sales",
+  "snapshots": [
+    {
+      "snapshot-id": 100,
+      "timestamp-ms": 1754025600000,
+      "sequence-number": 4,
+      "summary": {"operation": "append"},
+      "manifest-list": "s3://lakehouse/sales/orders/metadata/.../manifest-list.avro"
+    }
+  ],
+  "refs": {"main": {"snapshot-id": 100}},
+  "total": 5,
+  "page": 1,
+  "page_size": 20
+}
+```
+
+##### 10.6.5 获取表提交历史
+
+**URL**：`GET /api/iceberg/admin/tables/{name}/commits?namespace=<ns>&catalog=<catalog>`
+
+返回 `iceberg_commits` 中的真实提交历史（由原子 head CAS 写入）。
+
+**响应**：
+```json
+{
+  "table": "orders",
+  "namespace": "sales",
+  "catalog": "lakehouse",
+  "head_generation": 5,
+  "commit_count": 5,
+  "commits": [
+    {
+      "commit_id": "uuid",
+      "attempt_id": "uuid",
+      "head_generation": 5,
+      "base_head_generation": 4,
+      "base_metadata_location": "s3://.../00004.metadata.json",
+      "metadata_location": "s3://.../00005.metadata.json",
+      "writer_id": "storefs",
+      "status": "committed",
+      "created_at": "2026-08-01 10:00:00"
+    }
+  ]
+}
+```
+
+#### 10.7 存储占用
+
+**URL**：`GET /api/iceberg/admin/storage-usage?namespace=<ns>&catalog=<catalog>`
+
+按命名空间（可选到表）返回存储占用。`namespace` 可选——缺省时扫描全部命名空间。当对象扫描超过 10 万个时结果会标记 `approximate`。
+
+**响应**：
+```json
+{
+  "namespaces": [
+    {
+      "namespace": "sales",
+      "total_bytes": 204800,
+      "total_files": 10,
+      "tables": [
+        {
+          "table_name": "orders",
+          "total_bytes": 102400,
+          "total_files": 5,
+          "data_bytes": 100000,
+          "data_files": 3,
+          "metadata_bytes": 2400,
+          "metadata_files": 2
+        }
+      ],
+      "approximate": false
+    }
+  ],
+  "total_bytes": 204800,
+  "total_files": 10,
+  "approximate": false
+}
+```
+
+#### 10.8 湖仓维护
+
+所有维护操作均安全设计，并支持 `dry_run` 先预览再执行。完整语义见 [湖仓文档](lakehouse_cn.md)。
+
+##### 10.8.1 过期快照
+
+**URL**：`POST /api/iceberg/admin/tables/{name}/expire?namespace=<ns>&catalog=<catalog>`
+
+**请求**：
+```json
+{
+  "retain_last": 5,
+  "dry_run": true
+}
+```
+
+过期是 refs 感知的：保留 `main`/分支/标签 可达快照、其祖先链以及最近 `retain_last` 个快照，只有不可达快照才是候选。`dry_run` 为 false 时，表头通过 CAS 原子推进，随后删除已过期的 manifest-list。
+
+**响应**：
+```json
+{
+  "table": "orders",
+  "namespace": "sales",
+  "dry_run": true,
+  "candidates": [
+    {"snapshot_id": 90, "sequence_number": 2, "timestamp_ms": 1754025600000, "operation": "append", "manifest_list": "s3://.../manifest-list.avro"}
+  ],
+  "count": 1,
+  "deleted": []
+}
+```
+
+##### 10.8.2 清理孤儿文件
+
+**URL**：`POST /api/iceberg/admin/tables/{name}/orphan?namespace=<ns>&catalog=<catalog>`
+
+**请求**：
+```json
+{
+  "dry_run": true
+}
+```
+
+候选文件必须满足：(a) 不被任何保留快照引用，且 (b) 年龄超过孤儿宽限期（默认 7 天）。若无法构建可达集合，则**什么都不删**（fail-closed）。
+
+**响应**：
+```json
+{
+  "table": "orders",
+  "namespace": "sales",
+  "dry_run": true,
+  "candidates": [
+    {"key": "sales/orders/data/orphan.parquet", "size": 1024, "last_modified": "2026-07-20T10:00:00Z"}
+  ],
+  "count": 1,
+  "total_size": 1024,
+  "deleted": []
+}
+```
+
+##### 10.8.3 元数据压缩
+
+**URL**：`POST /api/iceberg/admin/tables/{name}/compact-metadata?namespace=<ns>&catalog=<catalog>`
+
+**请求**：
+```json
+{
+  "dry_run": false
+}
+```
+
+将元数据链重写为单个新的不可变 `metadata.json`，并在表头 CAS 成功后删除旧的 metadata-log 文件。
+
+**响应**：
+```json
+{
+  "table": "orders",
+  "namespace": "sales",
+  "dry_run": false,
+  "chain": {"current_version": 0, "chain_length": 5, "oldest_timestamp_ms": 1754025600000, "newest_timestamp_ms": 1754112000000},
+  "compacted": true,
+  "deleted_old_metadata": 4
+}
+```
+
+#### 10.9 Iceberg 查询
+
+**URL**：`POST /api/iceberg/admin/query`
+
+对表当前快照的数据文件执行真实的 Parquet 查询（Arrow）。
+
+**请求**：
+```json
+{
+  "sql": "SELECT order_id, customer FROM orders",
+  "namespace": "sales",
+  "table": "orders",
+  "limit": 100
+}
+```
+
+**响应**：
+```json
+{
+  "columns": [
+    {"name": "order_id", "type": "long"},
+    {"name": "customer", "type": "string"}
+  ],
+  "rows": [
+    {"order_id": 1, "customer": "alice"},
+    {"order_id": 2, "customer": "bob"}
+  ],
+  "row_count": 2
+}
+```
+
+#### 10.10 Iceberg REST Catalog（元数据端点）
+
+Iceberg REST Catalog 位于管理端口的 `/api/iceberg/{catalog}/v1/...`。它是 Iceberg v1 REST 规范的完整实现（命名空间、表、视图、配置、建表/提交/事务、register、credentials、sign 以及 v2 扫描规划）。**读操作（GET/HEAD）公开；写操作（POST/DELETE）需要 `Authorization: Bearer <token>`。**
+
+| 操作 | 方法与路径 |
+|-----------|---------------|
+| 健康检查 | `GET /api/iceberg/health` |
+| 配置 | `GET /api/iceberg/{catalog}/v1/config` |
+| 列出命名空间 | `GET /api/iceberg/{catalog}/v1/namespaces` |
+| 创建命名空间 | `POST /api/iceberg/{catalog}/v1/namespaces` |
+| 加载命名空间 | `GET /api/iceberg/{catalog}/v1/namespaces/{ns}` |
+| 命名空间是否存在 | `HEAD /api/iceberg/{catalog}/v1/namespaces/{ns}` |
+| 删除命名空间 | `DELETE /api/iceberg/{catalog}/v1/namespaces/{ns}[?force=true]` |
+| 更新命名空间属性 | `POST /api/iceberg/{catalog}/v1/namespaces/{ns}/properties` |
+| 列出表 | `GET /api/iceberg/{catalog}/v1/namespaces/{ns}/tables` |
+| 创建表 | `POST /api/iceberg/{catalog}/v1/namespaces/{ns}/tables` |
+| 加载表 | `GET /api/iceberg/{catalog}/v1/namespaces/{ns}/tables/{t}` |
+| 表是否存在 | `HEAD /api/iceberg/{catalog}/v1/namespaces/{ns}/tables/{t}` |
+| 提交表 | `POST /api/iceberg/{catalog}/v1/namespaces/{ns}/tables/{t}` |
+| 删除表 | `DELETE /api/iceberg/{catalog}/v1/namespaces/{ns}/tables/{t}[?purgeRequested=true]` |
+| 重命名表 | `POST /api/iceberg/{catalog}/v1/tables/rename` |
+| 注册表 | `POST /api/iceberg/{catalog}/v1/namespaces/{ns}/register` |
+| 注销表 | `POST /api/iceberg/{catalog}/v1/namespaces/{ns}/tables/{t}/unregister` |
+| 表凭据 | `GET /api/iceberg/{catalog}/v1/namespaces/{ns}/tables/{t}/credentials` |
+| 签名请求 | `POST /api/iceberg/{catalog}/v1/namespaces/{ns}/tables/{t}/sign` |
+| 上报指标 | `POST /api/iceberg/{catalog}/v1/namespaces/{ns}/tables/{t}/metrics` |
+| 事务提交 | `POST /api/iceberg/{catalog}/v1/transactions/commit` |
+| 列出视图 | `GET /api/iceberg/{catalog}/v1/namespaces/{ns}/views` |
+| 创建视图 | `POST /api/iceberg/{catalog}/v1/namespaces/{ns}/views` |
+| 加载视图 | `GET /api/iceberg/{catalog}/v1/namespaces/{ns}/views/{v}` |
+| 替换视图 | `POST /api/iceberg/{catalog}/v1/namespaces/{ns}/views/{v}` |
+| 删除视图 | `DELETE /api/iceberg/{catalog}/v1/namespaces/{ns}/views/{v}` |
+| 重命名视图 | `POST /api/iceberg/{catalog}/v1/views/rename` |
+| 注册视图 | `POST /api/iceberg/{catalog}/v1/namespaces/{ns}/register-view` |
+| 扫描规划 | `POST /api/iceberg/{catalog}/v1/namespaces/{ns}/tables/{t}/plan` / `GET`/`DELETE /plan/{id}` / `POST /tasks` |
+
+> 系统不存在隐式 catalog。每个 catalog 都通过管理端点（10.4 节）显式创建，并固定自己的 warehouse 根。
+
+### 11. 路径中的桶引用（Bucket Fingerprint）
+
+多个桶端点支持在路径中传入**桶引用**，可以是数字桶 **ID** 或桶**名称**：
+
+- `/api/buckets/{id}` 及其子资源：`GET`/`PUT`/`DELETE /api/buckets/{ref}`（桶配置）
+- `/api/buckets/{ref}/acl`（`GET`/`PUT`）
+- `/api/buckets/{ref}/notifications` 与 `/notifications/{nid}`
+- `/api/buckets/{ref}/lifecycle`
+- `/api/buckets/{ref}/objects`、`/objects/versions`、`/objects/check/incompleted`
+- `/api/buckets/{ref}/multipart-uploads`
+
+解析规则：
+1. 若路径段为数字且存在该 **ID** 的桶，则使用之。
+2. 否则将路径段视为桶**名称**，按名称解析（也支持纯数字的桶名）。
+
+本变更适用于：桶配置、ACL、通知、生命周期、对象列举/删除/版本、multipart 上传列举端点。本文档中此前使用 `:id` 的路径现在同样接受桶名称。
 
 ## 错误响应格式
 

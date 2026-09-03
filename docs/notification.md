@@ -62,7 +62,7 @@ Single event:
   "object": {
     "key": "documents%2Freport.pdf",
     "size": 1024000,
-    "etag": "\"abc123\"",
+    "etag": "\"d41d8cd98f00b204e9800998ecf8427e\"",
     "versionId": "uuid-version-id"
   }
 }
@@ -83,7 +83,7 @@ Batch (multiple events in 1-second window):
       "object": {
         "key": "documents%2Ffile1.pdf",
         "size": 512000,
-        "etag": "\"abc123\"",
+        "etag": "\"d41d8cd98f00b204e9800998ecf8427e\"",
         "versionId": ""
       }
     }
