@@ -287,6 +287,7 @@ Authorization: Bearer <token>
     {
       "id": "1",
       "name": "admin",
+      "email": "admin@example.com",
       "role": "admin",
       "created_at": "2023-01-01 12:00:00"
     }
@@ -311,6 +312,7 @@ Authorization: Bearer <token>
 {
   "id": "1",
   "name": "admin",
+  "email": "admin@example.com",
   "role": "admin",
   "accessKey": "AKIA1234567890",
   "secretKey": "abcdef1234567890",
@@ -332,6 +334,7 @@ Authorization: Bearer <token>
 {
   "username": "testuser",
   "password": "password123",
+  "email": "testuser@example.com",
   "role": "user"
 }
 ```
@@ -341,11 +344,23 @@ Authorization: Bearer <token>
 {
   "id": "2",
   "name": "testuser",
+  "email": "testuser@example.com",
   "role": "user",
   "accessKey": "",
   "secretKey": "",
   "created_at": "2023-01-02 10:00:00"
 }
+
+**请求字段**：
+| 字段 | 类型 | 说明 |
+|------|------|------|
+| `username` | string | 必填。用户名（3-63 字符，小写字母、数字、`_`、`-`、`.`） |
+| `password` | string | 必填。初始密码 |
+| `email` | string | 必填。邮箱（唯一，大小写不敏感，由唯一索引 `index_users_email` 保证） |
+| `role` | string | 必填。`super_admin`、`group_admin` 或 `user` |
+| `groupId` | integer | 非超管用户必填。用户所属分组 |
+| `mustChangePassword` | boolean | 选填。强制下次登录改密 |
+| `bypass` | boolean | 选填。绕过权限检查 |
 ```
 
 #### 2.4 更新用户（Update User）
@@ -361,6 +376,7 @@ Authorization: Bearer <token>
 ```json
 {
   "username": "updateduser",
+  "email": "updateduser@example.com",
   "role": "admin"
 }
 ```
@@ -370,12 +386,22 @@ Authorization: Bearer <token>
 {
   "id": "2",
   "name": "updateduser",
+  "email": "updateduser@example.com",
   "role": "admin",
   "accessKey": "",
   "secretKey": "",
   "created_at": "2023-01-02 10:00:00"
 }
 ```
+
+**请求字段**：
+| 字段 | 类型 | 说明 |
+|------|------|------|
+| `username` | string | 选填。新用户名 |
+| `email` | string | 更新时可选。新邮箱（会 trim）。非空时须与其他用户唯一（唯一索引 `index_users_email`）；空值保持不变 |
+| `role` | string | 选填。新角色 |
+| `groupId` | integer | 选填。新分组 ID |
+| `mustChangePassword` | boolean | 选填。强制下次登录改密 |
 
 #### 2.5 删除用户（Delete User）
 
@@ -1013,6 +1039,162 @@ Content-Type: application/json
 ```
 
 详细文档请参考：[通知文档](notification_cn.md)
+
+#### 4.9 桶策略管理（Bucket Policy Management）
+
+通过 Admin API 管理任意桶的 S3 桶策略。策略以**原始 JSON 字符串**存取（逐字节保留，格式与键序不变）。与 S3 `?policy` 子资源共享同一存储。
+
+##### 4.9.1 获取桶策略
+
+**URL**：`GET /api/buckets/{id}/policy`
+
+**所需权限**：桶 owner / 对该桶有访问权限的管理员
+
+**请求头**：
+```http
+Authorization: Bearer <token>
+```
+
+**响应**（200 OK）：未配置策略时 `policy` 为空字符串：
+```json
+{
+  "policy": "{\"Version\":\"2012-10-17\",\"Statement\":[...]}"
+}
+```
+
+##### 4.9.2 设置桶策略
+
+**URL**：`PUT /api/buckets/{id}/policy`
+
+**所需权限**：桶 owner / 对该桶有访问权限的管理员
+
+**请求头**：
+```http
+Authorization: Bearer <token>
+Content-Type: application/json
+```
+
+**请求体**：
+```json
+{
+  "policy": "{\"Version\":\"2012-10-17\",\"Statement\":[{\"Effect\":\"Allow\",\"Principal\":\"*\",\"Action\":\"s3:GetObject\",\"Resource\":\"arn:aws:s3:::mybucket/*\"}]}"
+}
+```
+
+**说明**：
+- 策略必须是通过基础校验的合法策略文档（否则报错）
+- **空** `policy` 字符串等价于删除策略
+- 请求体上限：1 MiB
+
+**响应**：
+```json
+{
+  "policy": "{\"Version\":\"2012-10-17\",...}"
+}
+```
+
+##### 4.9.3 删除桶策略
+
+**URL**：`DELETE /api/buckets/{id}/policy`
+
+**所需权限**：桶 owner / 对该桶有访问权限的管理员
+
+**请求头**：
+```http
+Authorization: Bearer <token>
+```
+
+**响应**：
+```json
+{
+  "policy": ""
+}
+```
+
+#### 4.10 桶日志管理（Bucket Logging Management）
+
+管理单桶的 **Server Access Logging** 配置。与 S3 `?logging` 子资源共享同一配置存储，任一处修改另一处可见。
+
+##### 4.10.1 获取桶日志配置
+
+**URL**：`GET /api/buckets/{id}/logging`
+
+**所需权限**：桶 owner / 对该桶有访问权限的管理员
+
+**请求头**：
+```http
+Authorization: Bearer <token>
+```
+
+**响应**（200 OK；未配置的桶返回 `enabled: false`）：
+```json
+{
+  "enabled": true,
+  "targetBucket": "log-bucket",
+  "targetPrefix": "s3-access/",
+  "loggingType": "Standard",
+  "objectRollTime": 5,
+  "partitionDateSource": "DeliveryTime",
+  "filter": {
+    "Key": {
+      "FilterRules": [
+        {"Name": "prefix", "Value": "test/"}
+      ]
+    }
+  }
+}
+```
+
+##### 4.10.2 设置桶日志配置
+
+**URL**：`PUT /api/buckets/{id}/logging`
+
+**所需权限**：桶 owner / 对该桶有访问权限的管理员
+
+**请求头**：
+```http
+Authorization: Bearer <token>
+Content-Type: application/json
+```
+
+**请求体**：
+```json
+{
+  "targetBucket": "log-bucket",
+  "targetPrefix": "s3-access/",
+  "loggingType": "Standard",
+  "objectRollTime": 5,
+  "partitionDateSource": "DeliveryTime",
+  "filter": {
+    "Key": {
+      "FilterRules": [
+        {"Name": "prefix", "Value": "test/"}
+      ]
+    }
+  }
+}
+```
+
+**说明**：
+- `targetBucket` 必填，且必须已存在
+- 目标桶不能是源桶本身、不能已配置日志、不能已加密、不能是 Requester Pays
+- `loggingType` 必须为 `Standard` 或 `Journal`；`partitionDateSource` 必须为 `DeliveryTime` 或 `EventTime`
+- 日志桶必须配置授权日志服务主体的桶策略（投递时校验；见[桶日志文档](bucketlogging_cn.md)）
+
+**响应**：`{"status": "ok"}`
+
+##### 4.10.3 删除桶日志配置
+
+**URL**：`DELETE /api/buckets/{id}/logging`
+
+**所需权限**：桶 owner / 对该桶有访问权限的管理员
+
+**请求头**：
+```http
+Authorization: Bearer <token>
+```
+
+**响应**：`{"status": "ok"}`
 
 ### 5. 对象管理（Object Management）
 
@@ -2326,6 +2508,8 @@ Iceberg REST Catalog 位于管理端口的 `/api/iceberg/{catalog}/v1/...`。它
 
 - `/api/buckets/{id}` 及其子资源：`GET`/`PUT`/`DELETE /api/buckets/{ref}`（桶配置）
 - `/api/buckets/{ref}/acl`（`GET`/`PUT`）
+- `/api/buckets/{ref}/policy`（`GET`/`PUT`/`DELETE`）
+- `/api/buckets/{ref}/logging`（`GET`/`PUT`/`DELETE`）
 - `/api/buckets/{ref}/notifications` 与 `/notifications/{nid}`
 - `/api/buckets/{ref}/lifecycle`
 - `/api/buckets/{ref}/objects`、`/objects/versions`、`/objects/check/incompleted`
@@ -2335,7 +2519,117 @@ Iceberg REST Catalog 位于管理端口的 `/api/iceberg/{catalog}/v1/...`。它
 1. 若路径段为数字且存在该 **ID** 的桶，则使用之。
 2. 否则将路径段视为桶**名称**，按名称解析（也支持纯数字的桶名）。
 
-本变更适用于：桶配置、ACL、通知、生命周期、对象列举/删除/版本、multipart 上传列举端点。本文档中此前使用 `:id` 的路径现在同样接受桶名称。
+本变更适用于：桶配置、ACL、策略、日志、通知、生命周期、对象列举/删除/版本、multipart 上传列举端点。本文档中此前使用 `:id` 的路径现在同样接受桶名称。
+
+### 12. 全局清理与日志配置（Global Cleanup & Logging Configuration）
+
+集群级的对象/桶回收配置与全局 S3 访问日志投递配置。**仅超级管理员（super_admin）**。
+
+#### 12.1 对象清理配置（Object Cleanup Configuration）
+
+控制后台清理服务：回收 stale/deleted/failed/interrupted 对象分片，并物理删除软删桶（在对象清空后）。两个服务共用本配置的扫描周期。
+
+##### 12.1.1 获取对象清理配置
+
+**URL**：`GET /api/object-cleanup/config`
+
+**所需权限**：`super_admin`
+
+**请求头**：
+```http
+Authorization: Bearer <token>
+```
+
+**响应**：
+```json
+{
+  "interval": "1h0m0s",
+  "grace_period": "24h0m0s",
+  "pending_timeout": "48h0m0s"
+}
+```
+
+| 字段 | 默认值 | 含义 |
+|------|--------|------|
+| `interval` | `1h` | 清理扫描周期 |
+| `grace_period` | `24h` | stale/deleted/failed/interrupted 对象保留期 |
+| `pending_timeout` | `48h` | `pending` 对象视为 abandoned 的超时（需大于保留期） |
+
+##### 12.1.2 更新对象清理配置
+
+**URL**：`PUT /api/object-cleanup/config`
+
+**所需权限**：`super_admin`
+
+**请求头**：
+```http
+Authorization: Bearer <token>
+Content-Type: application/json
+```
+
+**请求体**（部分更新——省略的字段保持当前值；时长必须合法且为正）：
+```json
+{
+  "interval": "30m",
+  "grace_period": "48h",
+  "pending_timeout": "72h"
+}
+```
+
+**响应**：`{"status": "ok"}`
+
+#### 12.2 全局桶日志配置（Global Bucket Logging Configuration）
+
+全局开关：为所有未配置单桶 `?logging` 的桶，将 **S3 访问日志**投递到指定日志桶。默认关闭。
+
+##### 12.2.1 获取桶日志配置
+
+**URL**：`GET /api/bucket-logging/config`
+
+**所需权限**：`super_admin`
+
+**请求头**：
+```http
+Authorization: Bearer <token>
+```
+
+**响应**：
+```json
+{
+  "enabled": false,
+  "logging_bucket": "s3-bucket-logging",
+  "target_prefix": "s3-access/"
+}
+```
+
+##### 12.2.2 更新桶日志配置
+
+**URL**：`PUT /api/bucket-logging/config`
+
+**所需权限**：`super_admin`
+
+**请求头**：
+```http
+Authorization: Bearer <token>
+Content-Type: application/json
+```
+
+**请求体**（部分更新）：
+```json
+{
+  "enabled": true,
+  "logging_bucket": "s3-bucket-logging",
+  "target_prefix": "s3-access/"
+}
+```
+
+**说明**：
+- `enabled` 为 `true` 时 `logging_bucket` 必填
+- 日志桶必须已存在
+- 单桶日志配置始终覆盖该桶的全局设置
+- 日志桶必须配置授权日志服务主体的策略（见[桶日志文档](bucketlogging_cn.md)）
+
+**响应**：`{"status": "ok"}`
 
 ## 错误响应格式
 

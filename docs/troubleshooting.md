@@ -8,13 +8,13 @@
 
 #### Symptoms
 - "database connection failed" message at startup
-- Cannot connect to MySQL or Apache Doris
+- Cannot connect to MySQL or TiDB
 
 #### Possible Causes and Solutions
 
 1. **Database Service Not Started**
    - Check MySQL service status: `systemctl status mysql`
-   - Check Apache Doris service status: `./fe/bin/start_fe.sh --status`
+   - Check TiDB service status: `systemctl status tidb-server` (or check the `tiup playground` process when using local development)
    - Ensure the database service is running
 
 2. **Database Configuration Error**
@@ -23,13 +23,13 @@
      cluster:
        db:
          host: "127.0.0.1"
-         port: 9030
+         port: 4000
          user: "root"
          password: ""
          database: "mydb"
          timeout: 10s
      ```
-   - Ensure the configuration matches the actual database settings
+   - Ensure the configuration matches the actual database settings (use the port your TiDB instance listens on; TiDB's default MySQL protocol port is `4000`)
 
 3. **Firewall or Network Issues**
    - Check firewall rules to ensure database port access is allowed
@@ -312,14 +312,16 @@ mysqldump -h <host> -P <port> -u <user> -p <database> > backup.sql
 mysql -h <host> -P <port> -u <user> -p <database> < backup.sql
 ```
 
-#### Apache Doris Backup
+#### TiDB Backup
+
+TiDB is MySQL-protocol-compatible, so the same `mysqldump`/`mysql` approach works; for large datasets use `dumpling` (the official TiDB export tool).
 
 ```bash
 # Backup metadata
-./fe/bin/backup_fe.sh
+dumpling -h <host> -P <port> -u <user> -p <password> -B <database> -o ./backup
 
 # Restore metadata
-./fe/bin/restore_fe.sh
+mysql -h <host> -P <port> -u <user> -p <database> < backup.sql
 ```
 
 ### 2. How to Backup Data Files

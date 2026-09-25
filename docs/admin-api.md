@@ -287,6 +287,7 @@ Authorization: Bearer <token>
     {
       "id": "1",
       "name": "admin",
+      "email": "admin@example.com",
       "role": "admin",
       "created_at": "2023-01-01 12:00:00"
     }
@@ -311,6 +312,7 @@ Authorization: Bearer <token>
 {
   "id": "1",
   "name": "admin",
+  "email": "admin@example.com",
   "role": "admin",
   "accessKey": "AKIA1234567890",
   "secretKey": "abcdef1234567890",
@@ -332,6 +334,7 @@ Authorization: Bearer <token>
 {
   "username": "testuser",
   "password": "password123",
+  "email": "testuser@example.com",
   "role": "user"
 }
 ```
@@ -341,12 +344,24 @@ Authorization: Bearer <token>
 {
   "id": "2",
   "name": "testuser",
+  "email": "testuser@example.com",
   "role": "user",
   "accessKey": "",
   "secretKey": "",
   "created_at": "2023-01-02 10:00:00"
 }
 ```
+
+**Request Fields**:
+| Field | Type | Description |
+|-------|------|-------------|
+| `username` | string | Required. Username (3-63 chars, lowercase letters, digits, `_`, `-`, `.`) |
+| `password` | string | Required. Initial password |
+| `email` | string | Required. Unique, case-insensitive (enforced by the unique index `index_users_email`) |
+| `role` | string | Required. `super_admin`, `group_admin`, or `user` |
+| `groupId` | integer | Required for non-super-admin users. Group to place the user in |
+| `mustChangePassword` | boolean | Optional. Force password change on next login |
+| `bypass` | boolean | Optional. Bypass permission checks |
 
 #### 2.4 Update User
 
@@ -361,6 +376,7 @@ Authorization: Bearer <token>
 ```json
 {
   "username": "updateduser",
+  "email": "updateduser@example.com",
   "role": "admin"
 }
 ```
@@ -370,12 +386,22 @@ Authorization: Bearer <token>
 {
   "id": "2",
   "name": "updateduser",
+  "email": "updateduser@example.com",
   "role": "admin",
   "accessKey": "",
   "secretKey": "",
   "created_at": "2023-01-02 10:00:00"
 }
 ```
+
+**Request Fields**:
+| Field | Type | Description |
+|-------|------|-------------|
+| `username` | string | Optional. New username |
+| `email` | string | Optional when updating. New email (trimmed). When non-empty it must be unique among other users (unique index `index_users_email`); empty leaves it unchanged |
+| `role` | string | Optional. New role |
+| `groupId` | integer | Optional. New group ID |
+| `mustChangePassword` | boolean | Optional. Force password change on next login |
 
 #### 2.5 Delete User
 
@@ -1134,6 +1160,162 @@ Content-Type: application/json
   "enabled": true,
   "scan_interval": "1h"
 }
+```
+
+**Response**: `{"status": "ok"}`
+
+#### 4.11 Bucket Policy Management
+
+Manage the S3 bucket policy of any bucket through the Admin API. The policy is stored and returned as a **raw JSON string** (byte-for-byte; formatting and key order are preserved). This shares the same underlying policy store as the S3 `?policy` sub-resource.
+
+##### 4.11.1 Get Bucket Policy
+
+**URL**: `GET /api/buckets/{id}/policy`
+
+**Required Permission**: bucket owner / admin with bucket access
+
+**Request Header**:
+```http
+Authorization: Bearer <token>
+```
+
+**Response** (200 OK): a policy that does not exist returns an empty string:
+```json
+{
+  "policy": "{\"Version\":\"2012-10-17\",\"Statement\":[...]}"
+}
+```
+
+##### 4.11.2 Put Bucket Policy
+
+**URL**: `PUT /api/buckets/{id}/policy`
+
+**Required Permission**: bucket owner / admin with bucket access
+
+**Request Header**:
+```http
+Authorization: Bearer <token>
+Content-Type: application/json
+```
+
+**Request Body**:
+```json
+{
+  "policy": "{\"Version\":\"2012-10-17\",\"Statement\":[{\"Effect\":\"Allow\",\"Principal\":\"*\",\"Action\":\"s3:GetObject\",\"Resource\":\"arn:aws:s3:::mybucket/*\"}]}"
+}
+```
+
+**Description**:
+- The policy is validated as a well-formed policy document (`MalformedPolicy`-style error on failure)
+- An **empty** `policy` string is equivalent to deleting the policy
+- Body size limit: 1 MiB
+
+**Response**:
+```json
+{
+  "policy": "{\"Version\":\"2012-10-17\",...}"
+}
+```
+
+##### 4.11.3 Delete Bucket Policy
+
+**URL**: `DELETE /api/buckets/{id}/policy`
+
+**Required Permission**: bucket owner / admin with bucket access
+
+**Request Header**:
+```http
+Authorization: Bearer <token>
+```
+
+**Response**:
+```json
+{
+  "policy": ""
+}
+```
+
+#### 4.12 Bucket Logging Management
+
+Manage the per-bucket **Server Access Logging** configuration. This shares the same configuration store as the S3 `?logging` sub-resource, so changes made through either are visible to both.
+
+##### 4.12.1 Get Bucket Logging Configuration
+
+**URL**: `GET /api/buckets/{id}/logging`
+
+**Required Permission**: bucket owner / admin with bucket access
+
+**Request Header**:
+```http
+Authorization: Bearer <token>
+```
+
+**Response** (200 OK; a bucket without a configuration returns `enabled: false`):
+```json
+{
+  "enabled": true,
+  "targetBucket": "log-bucket",
+  "targetPrefix": "s3-access/",
+  "loggingType": "Standard",
+  "objectRollTime": 5,
+  "partitionDateSource": "DeliveryTime",
+  "filter": {
+    "Key": {
+      "FilterRules": [
+        {"Name": "prefix", "Value": "test/"}
+      ]
+    }
+  }
+}
+```
+
+##### 4.12.2 Put Bucket Logging Configuration
+
+**URL**: `PUT /api/buckets/{id}/logging`
+
+**Required Permission**: bucket owner / admin with bucket access
+
+**Request Header**:
+```http
+Authorization: Bearer <token>
+Content-Type: application/json
+```
+
+**Request Body**:
+```json
+{
+  "targetBucket": "log-bucket",
+  "targetPrefix": "s3-access/",
+  "loggingType": "Standard",
+  "objectRollTime": 5,
+  "partitionDateSource": "DeliveryTime",
+  "filter": {
+    "Key": {
+      "FilterRules": [
+        {"Name": "prefix", "Value": "test/"}
+      ]
+    }
+  }
+}
+```
+
+**Description**:
+- `targetBucket` is required and must exist
+- The target must not be the source bucket, must not itself have logging, must not be encrypted, and must not be requester-pays
+- `loggingType` must be `Standard` or `Journal`; `partitionDateSource` must be `DeliveryTime` or `EventTime`
+- The log bucket must have a bucket policy authorizing the logging service (enforced at delivery time; see the [Bucket Logging documentation](bucketlogging.md))
+
+**Response**: `{"status": "ok"}`
+
+##### 4.12.3 Delete Bucket Logging Configuration
+
+**URL**: `DELETE /api/buckets/{id}/logging`
+
+**Required Permission**: bucket owner / admin with bucket access
+
+**Request Header**:
+```http
+Authorization: Bearer <token>
 ```
 
 **Response**: `{"status": "ok"}`
@@ -2484,6 +2666,8 @@ Several bucket endpoints accept a **bucket reference** in the path that may be e
 
 - `/api/buckets/{id}` and subresources: `GET`/`PUT`/`DELETE /api/buckets/{ref}` (bucket config)
 - `/api/buckets/{ref}/acl` (`GET`/`PUT`)
+- `/api/buckets/{ref}/policy` (`GET`/`PUT`/`DELETE`)
+- `/api/buckets/{ref}/logging` (`GET`/`PUT`/`DELETE`)
 - `/api/buckets/{ref}/notifications` and `/notifications/{nid}`
 - `/api/buckets/{ref}/lifecycle`
 - `/api/buckets/{ref}/objects`, `/objects/versions`, `/objects/check/incompleted`
@@ -2493,7 +2677,117 @@ Resolution rules:
 1. If the path segment is numeric and a bucket with that **ID** exists, it is used.
 2. Otherwise the segment is treated as a bucket **name** and resolved via name lookup (this also handles all-numeric bucket names).
 
-This change applies to: bucket config, ACL, notification, lifecycle, object listing/deletion/versions, and multipart upload listing endpoints. Endpoint paths in this document that previously showed `:id` now also accept a bucket name.
+This change applies to: bucket config, ACL, policy, logging, notification, lifecycle, object listing/deletion/versions, and multipart upload listing endpoints. Endpoint paths in this document that previously showed `:id` now also accept a bucket name.
+
+### 12. Global Cleanup & Logging Configuration
+
+Cluster-wide configuration for object/bucket garbage collection and for global S3 access-log delivery. **Super admin only.**
+
+#### 12.1 Object Cleanup Configuration
+
+Controls the background cleanup services that reclaim stale, deleted, failed, or interrupted object fragments, and that physically delete soft-deleted buckets (after their objects are cleared). The scanner interval is shared by both services.
+
+##### 12.1.1 Get Object Cleanup Config
+
+**URL**: `GET /api/object-cleanup/config`
+
+**Required Permission**: `super_admin`
+
+**Request Header**:
+```http
+Authorization: Bearer <token>
+```
+
+**Response**:
+```json
+{
+  "interval": "1h0m0s",
+  "grace_period": "24h0m0s",
+  "pending_timeout": "48h0m0s"
+}
+```
+
+| Field | Default | Meaning |
+|-------|---------|---------|
+| `interval` | `1h` | Cleanup scan period |
+| `grace_period` | `24h` | Retention period for stale/deleted/failed/interrupted objects |
+| `pending_timeout` | `48h` | Timeout before a `pending` object is treated as abandoned (must be greater than the retention period) |
+
+##### 12.1.2 Update Object Cleanup Config
+
+**URL**: `PUT /api/object-cleanup/config`
+
+**Required Permission**: `super_admin`
+
+**Request Header**:
+```http
+Authorization: Bearer <token>
+Content-Type: application/json
+```
+
+**Request Body** (partial update — omitted fields keep their current value; durations must be valid and positive):
+```json
+{
+  "interval": "30m",
+  "grace_period": "48h",
+  "pending_timeout": "72h"
+}
+```
+
+**Response**: `{"status": "ok"}`
+
+#### 12.2 Global Bucket Logging Configuration
+
+Global switch for delivering **S3 access logs** into a designated logging bucket, for all buckets that do not have their own per-bucket `?logging` configuration. Default off.
+
+##### 12.2.1 Get Bucket Logging Config
+
+**URL**: `GET /api/bucket-logging/config`
+
+**Required Permission**: `super_admin`
+
+**Request Header**:
+```http
+Authorization: Bearer <token>
+```
+
+**Response**:
+```json
+{
+  "enabled": false,
+  "logging_bucket": "s3-bucket-logging",
+  "target_prefix": "s3-access/"
+}
+```
+
+##### 12.2.2 Update Bucket Logging Config
+
+**URL**: `PUT /api/bucket-logging/config`
+
+**Required Permission**: `super_admin`
+
+**Request Header**:
+```http
+Authorization: Bearer <token>
+Content-Type: application/json
+```
+
+**Request Body** (partial update):
+```json
+{
+  "enabled": true,
+  "logging_bucket": "s3-bucket-logging",
+  "target_prefix": "s3-access/"
+}
+```
+
+**Description**:
+- When `enabled` is `true`, `logging_bucket` is required
+- The logging bucket must exist
+- A per-bucket logging configuration always overrides this global setting for that bucket
+- The log bucket must carry a policy authorizing the logging service (see the [Bucket Logging documentation](bucketlogging.md))
+
+**Response**: `{"status": "ok"}`
 
 ## Error Response Format
 

@@ -48,7 +48,7 @@ The **StoreFS Catalog** enables full-text and vector (semantic) search across al
 ┌──────────────────────────────────────────────────────────────────┐
 │                    CatalogBuilder (Go binary)                     │
 │                                                                  │
-│  1. Scans Doris (object_md) for unprocessed objects              │
+│  1. Scans TiDB (object_md) for unprocessed objects              │
 │  2. Downloads object content from S3                             │
 │  3. Extracts text (PDF, DOCX, HTML, plain text, etc.)            │
 │  4. Generates embeddings via LLM API (per chunk)                 │
@@ -218,7 +218,7 @@ The **embedding dimension must be consistent** across all components:
 ### Config File
 
 ```yaml
-doris:
+db:
   host: "<host>"
   port: 9030
   database: "mydb"
@@ -269,9 +269,9 @@ builder:
 
 | Section | Field | Default | Description |
 |---------|-------|---------|-------------|
-| `doris` | `host` | `127.0.0.1` | Doris/MySQL host |
-| `doris` | `port` | `9030` | Doris/MySQL port |
-| `doris` | `database` | `mydb` | Database name |
+| `db` | `host` | `127.0.0.1` | TiDB/MySQL host |
+| `db` | `port` | `9030` | TiDB/MySQL port |
+| `db` | `database` | `mydb` | Database name |
 | `s3` | `endpoint` | `http://127.0.0.1:8901` | S3 endpoint for object download |
 | `s3` | `access_key` | — | S3 access key (must have read access) |
 | `s3` | `secret_key` | — | S3 secret key |

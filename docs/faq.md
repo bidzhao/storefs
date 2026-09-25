@@ -10,9 +10,9 @@
 
 StoreFS currently supports the following databases:
 - **MySQL**: Traditional relational database, suitable for small deployments
-- **Apache Doris**: High-performance analytical database, suitable for large-scale storage and complex queries
+- **TiDB**: Distributed MySQL-protocol-compatible database, suitable for large-scale storage, complex queries, and horizontal scalability
 
-For production environments, Apache Doris is recommended because it provides better query performance and scalability.
+For production environments, TiDB is recommended because it is MySQL-protocol-compatible (existing tooling keeps working) and provides better scalability and availability.
 
 #### 1.2 How to configure multiple disks?
 
@@ -75,7 +75,7 @@ A return of `"status": "healthy"` indicates the node is healthy.
 StoreFS supports the following backup methods:
 1. **Manual backup**: Directly copy files on disk
 2. **S3 interface**: Use AWS CLI or other S3 tools to sync data to external storage
-3. **Database backup**: Back up metadata in Apache Doris/MySQL
+3. **Database backup**: Back up metadata in TiDB/MySQL
 
 #### 3.2 How to restore data?
 
@@ -166,7 +166,7 @@ The operation steps are the same as described in [3.3 How to replace a disk?](#3
 1. Increase the number of nodes to distribute write pressure
 2. Use faster storage devices (such as SSD)
 3. Adjust disk weights to evenly distribute data
-4. Optimize database configurations (such as Apache Doris memory and concurrency settings)
+4. Optimize database configurations (such as TiDB memory and concurrency settings)
 
 #### 4.2 How to improve read performance?
 

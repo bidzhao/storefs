@@ -120,6 +120,21 @@ Authorization: AWS4-HMAC-SHA256 Credential=<AK>/20230101/us-east-1/s3/aws4_reque
 </ListAllMyBucketsResult>
 ```
 
+**扩展**（兼容 RGW）：
+
+- `GET /?usage` — 在响应中附加账户配额 `<Summary>` 块：
+  ```xml
+  <Summary>
+    <QuotaMaxBytes>-1</QuotaMaxBytes>
+    <QuotaMaxBuckets>1000</QuotaMaxBuckets>
+    <QuotaMaxObjCount>-1</QuotaMaxObjCount>
+    <QuotaMaxBytesPerBucket>-1</QuotaMaxBytesPerBucket>
+    <QuotaMaxObjCountPerBucket>-1</QuotaMaxObjCountPerBucket>
+  </Summary>
+  ```
+  （`-1` 表示无限制；该响应省略 `xmlns` 属性。）
+- `GET /?max-buckets=N&continuation-token=<上一桶名>` — 分页列出。当还有更多桶时，响应中返回 `ContinuationToken`；下一页从该 token 指定的桶名之后继续。
+
 **错误响应**：
 - 401 Unauthorized：认证失败
 
@@ -435,6 +450,625 @@ Authorization: AWS4-HMAC-SHA256 Credential=<AK>/20230101/us-east-1/s3/aws4_reque
 - 404 Not Found：桶不存在
 - 403 Forbidden：无 `WRITE_ACP` 权限
 - 400 Bad Request：XML 格式错误
+
+#### 1.12 列出对象版本（ListObjectVersions）
+
+**URL**：`GET /<bucket>?versions`
+
+列出已开启版本控制桶中对象的所有版本（含删除标记 delete marker）。
+
+**请求**：
+```http
+GET /mybucket?versions HTTP/1.1
+Host: 127.0.0.1:8901
+Authorization: AWS4-HMAC-SHA256 Credential=<AK>/20230101/us-east-1/s3/aws4_request, SignedHeaders=..., Signature=...
+```
+
+**查询参数**：
+| 参数 | 说明 |
+|------|------|
+| `prefix` | 按前缀过滤 key |
+| `key-marker` | 从指定 key 之后开始列出 |
+| `version-id-marker` | 从 `key-marker` 的指定版本之后开始列出 |
+| `delimiter` | 按分隔符分组（返回 `CommonPrefixes`） |
+| `max-keys` | 最大返回 key 数（默认 1000，最大 1000；`0` 返回空结果） |
+
+**响应**：
+```xml
+<?xml version="1.0" encoding="UTF-8"?>
+<ListVersionsResult xmlns="http://s3.amazonaws.com/doc/2006-03-01/">
+  <Name>mybucket</Name>
+  <Prefix></Prefix>
+  <KeyMarker></KeyMarker>
+  <VersionIdMarker></VersionIdMarker>
+  <MaxKeys>1000</MaxKeys>
+  <IsTruncated>false</IsTruncated>
+  <Version>
+    <Key>doc.txt</Key>
+    <VersionId>1700000000000000000</VersionId>
+    <IsLatest>true</IsLatest>
+    <LastModified>2023-01-01T12:00:00.000Z</LastModified>
+    <ETag>"d41d8cd98f00b204e9800998ecf8427e"</ETag>
+    <Size>0</Size>
+    <StorageClass>STANDARD</StorageClass>
+  </Version>
+  <DeleteMarker>
+    <Key>old.txt</Key>
+    <VersionId>1700000000000000001</VersionId>
+    <IsLatest>false</IsLatest>
+    <LastModified>2023-01-02T12:00:00.000Z</LastModified>
+  </DeleteMarker>
+</ListVersionsResult>
+```
+
+**所需权限**：`READ`（桶）
+
+**错误响应**：
+- 404 Not Found：桶不存在
+- 403 Forbidden：无 `READ` 权限
+
+#### 1.13 获取桶 CORS 配置（GetBucketCors）
+
+**URL**：`GET /<bucket>?cors`
+
+**请求**：
+```http
+GET /mybucket?cors HTTP/1.1
+Host: 127.0.0.1:8901
+Authorization: AWS4-HMAC-SHA256 Credential=<AK>/20230101/us-east-1/s3/aws4_request, SignedHeaders=..., Signature=...
+```
+
+**响应**（200 OK）：
+```xml
+<?xml version="1.0" encoding="UTF-8"?>
+<CORSConfiguration xmlns="http://s3.amazonaws.com/doc/2006-03-01/">
+  <CORSRule>
+    <AllowedOrigin>*</AllowedOrigin>
+    <AllowedMethod>GET</AllowedMethod>
+    <AllowedMethod>PUT</AllowedMethod>
+    <AllowedHeader>*</AllowedHeader>
+    <MaxAgeSeconds>3000</MaxAgeSeconds>
+  </CORSRule>
+</CORSConfiguration>
+```
+
+**所需权限**：`READ`
+
+**错误响应**：
+- 404 Not Found：桶不存在，或 `NoSuchCORSConfiguration`（未配置 CORS）
+- 403 Forbidden：无 `READ` 权限
+
+#### 1.14 设置桶 CORS 配置（PutBucketCors）
+
+**URL**：`PUT /<bucket>?cors`
+
+**请求**：
+```http
+PUT /mybucket?cors HTTP/1.1
+Host: 127.0.0.1:8901
+Content-Type: application/xml
+Authorization: AWS4-HMAC-SHA256 Credential=<AK>/20230101/us-east-1/s3/aws4_request, SignedHeaders=..., Signature=...
+
+<CORSConfiguration xmlns="http://s3.amazonaws.com/doc/2006-03-01/">
+  <CORSRule>
+    <AllowedOrigin>https://app.example.com</AllowedOrigin>
+    <AllowedMethod>GET</AllowedMethod>
+    <AllowedMethod>PUT</AllowedMethod>
+    <AllowedHeader>*</AllowedHeader>
+    <ExposeHeader>ETag</ExposeHeader>
+    <MaxAgeSeconds>3000</MaxAgeSeconds>
+  </CORSRule>
+</CORSConfiguration>
+```
+
+**说明**：
+- 按原样存储 CORS 规则，GET 时原样回读
+- 跨域（浏览器）请求按规则评估；匹配的请求会返回 `Access-Control-Allow-*` 头
+- 支持预检请求（`OPTIONS` 携带 `Origin` + `Access-Control-Request-Method`）
+
+**所需权限**：`WRITE`
+
+**响应**：`200 OK`
+
+**错误响应**：
+- 404 Not Found：桶不存在
+- 403 Forbidden：无 `WRITE` 权限
+- 400 Bad Request：`MalformedXML` — 空请求体或非法 XML
+
+#### 1.15 删除桶 CORS 配置（DeleteBucketCors）
+
+**URL**：`DELETE /<bucket>?cors`
+
+**请求**：
+```http
+DELETE /mybucket?cors HTTP/1.1
+Host: 127.0.0.1:8901
+Authorization: AWS4-HMAC-SHA256 Credential=<AK>/20230101/us-east-1/s3/aws4_request, SignedHeaders=..., Signature=...
+```
+
+**所需权限**：`WRITE`
+
+**响应**：`204 No Content`
+
+**错误响应**：
+- 404 Not Found：桶不存在
+- 403 Forbidden：无 `WRITE` 权限
+
+#### 1.16 获取桶位置（GetBucketLocation）
+
+**URL**：`GET /<bucket>?location`
+
+**请求**：
+```http
+GET /mybucket?location HTTP/1.1
+Host: 127.0.0.1:8901
+Authorization: AWS4-HMAC-SHA256 Credential=<AK>/20230101/us-east-1/s3/aws4_request, SignedHeaders=..., Signature=...
+```
+
+**响应**：
+```xml
+<?xml version="1.0" encoding="UTF-8"?>
+<LocationConstraint xmlns="http://s3.amazonaws.com/doc/2006-03-01/"></LocationConstraint>
+```
+
+**说明**：
+- 返回桶的区域（location）；空值表示默认区域（`us-east-1`）
+
+**错误响应**：
+- 404 Not Found：桶不存在
+
+#### 1.17 桶策略（Bucket Policy）
+
+##### 1.17.1 设置桶策略（PutBucketPolicy）
+
+**URL**：`PUT /<bucket>?policy`
+
+**请求**：
+```http
+PUT /mybucket?policy HTTP/1.1
+Host: 127.0.0.1:8901
+Content-Type: application/json
+Authorization: AWS4-HMAC-SHA256 Credential=<AK>/20230101/us-east-1/s3/aws4_request, SignedHeaders=..., Signature=...
+
+{"Version":"2012-10-17","Statement":[{"Effect":"Allow","Principal":"*","Action":"s3:GetObject","Resource":"arn:aws:s3:::mybucket/*"}]}
+```
+
+**说明**：
+- 按原样存储策略 JSON（保留键序）
+- 策略必须是合法 JSON，否则返回 `MalformedPolicy`
+- `BlockPublicPolicy`（Public Access Block）会拒绝带通配符 `Principal` 且无 `Condition` 的公开策略
+- `x-amz-confirm-remove-self-bucket-access: true` 记录 owner 明确移除自己访问的确认（此后 owner 对 policy 的豁免失效）
+
+**所需权限**：`s3:PutBucketPolicy`（`FULL_CONTROL`）；桶 owner 豁免，除非已确认移除自身访问
+
+**响应**：`204 No Content`
+
+**错误响应**：
+- 404 Not Found：桶不存在
+- 403 Forbidden：`AccessDenied`（无权限，或策略被 `BlockPublicPolicy` 拦截）
+- 400 Bad Request：`MalformedPolicy` — 非法策略 JSON
+
+##### 1.17.2 获取桶策略（GetBucketPolicy）
+
+**URL**：`GET /<bucket>?policy`
+
+**请求**：
+```http
+GET /mybucket?policy HTTP/1.1
+Host: 127.0.0.1:8901
+Authorization: AWS4-HMAC-SHA256 Credential=<AK>/20230101/us-east-1/s3/aws4_request, SignedHeaders=..., Signature=...
+```
+
+**响应**（200 OK）：策略 JSON 字符串直接作为 HTTP body：
+
+```json
+{"Version":"2012-10-17","Statement":[{"Effect":"Allow","Principal":"*","Action":"s3:GetObject","Resource":"arn:aws:s3:::mybucket/*"}]}
+```
+
+**所需权限**：`s3:GetBucketPolicy`（`FULL_CONTROL`）；桶 owner 豁免，除非已确认移除自身访问
+
+**错误响应**：
+- 404 Not Found：桶不存在，或 `NoSuchBucketPolicy`
+- 403 Forbidden：`AccessDenied`
+
+##### 1.17.3 删除桶策略（DeleteBucketPolicy）
+
+**URL**：`DELETE /<bucket>?policy`
+
+**请求**：
+```http
+DELETE /mybucket?policy HTTP/1.1
+Host: 127.0.0.1:8901
+Authorization: AWS4-HMAC-SHA256 Credential=<AK>/20230101/us-east-1/s3/aws4_request, SignedHeaders=..., Signature=...
+```
+
+**所需权限**：`s3:DeleteBucketPolicy`（`FULL_CONTROL`）；桶 owner 豁免，除非已确认移除自身访问
+
+**响应**：`204 No Content`
+
+**错误响应**：
+- 404 Not Found：桶不存在
+- 403 Forbidden：`AccessDenied`
+
+##### 1.17.4 获取桶策略状态（GetBucketPolicyStatus）
+
+**URL**：`GET /<bucket>?policyStatus`
+
+**请求**：
+```http
+GET /mybucket?policyStatus HTTP/1.1
+Host: 127.0.0.1:8901
+Authorization: AWS4-HMAC-SHA256 Credential=<AK>/20230101/us-east-1/s3/aws4_request, SignedHeaders=..., Signature=...
+```
+
+**响应**：
+```xml
+<?xml version="1.0" encoding="UTF-8"?>
+<PolicyStatus xmlns="http://s3.amazonaws.com/doc/2006-03-01/">
+  <IsPublic>false</IsPublic>
+</PolicyStatus>
+```
+
+**说明**：
+- 当桶策略包含带通配符 `Principal`（`*` 或 `{"AWS":"*"}`）且无 `Condition` 的 `Allow` 语句，**或**桶 ACL 授予 `AllUsers`/`AuthenticatedUsers` `READ`/`WRITE`/`FULL_CONTROL` 时，`IsPublic` 为 `true`
+
+**所需权限**：`s3:GetBucketPolicyStatus`（`FULL_CONTROL`）
+
+**错误响应**：
+- 404 Not Found：桶不存在
+- 403 Forbidden：`AccessDenied`
+
+#### 1.18 公共访问阻止（Public Access Block）
+
+##### 1.18.1 设置公共访问阻止（PutBucketPublicAccessBlock）
+
+**URL**：`PUT /<bucket>?publicAccessBlock`
+
+**请求**：
+```http
+PUT /mybucket?publicAccessBlock HTTP/1.1
+Host: 127.0.0.1:8901
+Content-Type: application/xml
+Authorization: AWS4-HMAC-SHA256 Credential=<AK>/20230101/us-east-1/s3/aws4_request, SignedHeaders=..., Signature=...
+
+<PublicAccessBlockConfiguration xmlns="http://s3.amazonaws.com/doc/2006-03-01/">
+  <BlockPublicAcls>true</BlockPublicAcls>
+  <IgnorePublicAcls>true</IgnorePublicAcls>
+  <BlockPublicPolicy>true</BlockPublicPolicy>
+  <RestrictPublicBuckets>true</RestrictPublicBuckets>
+</PublicAccessBlockConfiguration>
+```
+
+**说明**：
+- 四个独立开关，缺省均为 `false`：
+  - `BlockPublicAcls` — 阻止授予公开 ACL
+  - `IgnorePublicAcls` — 忽略已有的公开 ACL 授权
+  - `BlockPublicPolicy` — 阻止设置公开桶策略（通配符 Principal、无 Condition）
+  - `RestrictPublicBuckets` — 限制公开策略/ACL 授予的跨主体访问
+
+**所需权限**：`s3:PutBucketPublicAccessBlock`（`FULL_CONTROL`）
+
+**响应**：`200 OK`
+
+**错误响应**：
+- 404 Not Found：桶不存在
+- 403 Forbidden：`AccessDenied`
+- 400 Bad Request：`MalformedXML` — 非法 XML
+
+##### 1.18.2 获取公共访问阻止（GetBucketPublicAccessBlock）
+
+**URL**：`GET /<bucket>?publicAccessBlock`
+
+**请求**：
+```http
+GET /mybucket?publicAccessBlock HTTP/1.1
+Host: 127.0.0.1:8901
+Authorization: AWS4-HMAC-SHA256 Credential=<AK>/20230101/us-east-1/s3/aws4_request, SignedHeaders=..., Signature=...
+```
+
+**响应**（200 OK）：
+```xml
+<PublicAccessBlockConfiguration xmlns="http://s3.amazonaws.com/doc/2006-03-01/">
+  <BlockPublicAcls>true</BlockPublicAcls>
+  <IgnorePublicAcls>false</IgnorePublicAcls>
+  <BlockPublicPolicy>false</BlockPublicPolicy>
+  <RestrictPublicBuckets>false</RestrictPublicBuckets>
+</PublicAccessBlockConfiguration>
+```
+
+**所需权限**：`s3:GetBucketPublicAccessBlock`（`FULL_CONTROL`）
+
+**错误响应**：
+- 404 Not Found：桶不存在，或 `NoSuchPublicAccessBlockConfiguration`
+- 403 Forbidden：`AccessDenied`
+
+##### 1.18.3 删除公共访问阻止（DeleteBucketPublicAccessBlock）
+
+**URL**：`DELETE /<bucket>?publicAccessBlock`
+
+**请求**：
+```http
+DELETE /mybucket?publicAccessBlock HTTP/1.1
+Host: 127.0.0.1:8901
+Authorization: AWS4-HMAC-SHA256 Credential=<AK>/20230101/us-east-1/s3/aws4_request, SignedHeaders=..., Signature=...
+```
+
+**所需权限**：`s3:PutBucketPublicAccessBlock`（`FULL_CONTROL`）
+
+**响应**：`204 No Content`
+
+**错误响应**：
+- 404 Not Found：桶不存在
+- 403 Forbidden：`AccessDenied`
+
+#### 1.19 桶加密（Bucket Encryption）
+
+##### 1.19.1 设置桶加密（PutBucketEncryption）
+
+**URL**：`PUT /<bucket>?encryption`
+
+**请求**：
+```http
+PUT /mybucket?encryption HTTP/1.1
+Host: 127.0.0.1:8901
+Content-Type: application/xml
+Authorization: AWS4-HMAC-SHA256 Credential=<AK>/20230101/us-east-1/s3/aws4_request, SignedHeaders=..., Signature=...
+
+<ServerSideEncryptionConfiguration xmlns="http://s3.amazonaws.com/doc/2006-03-01/">
+  <Rule>
+    <ApplyServerSideEncryptionByDefault>
+      <SSEAlgorithm>aws:kms</SSEAlgorithm>
+      <KMSMasterKeyID>key-id</KMSMasterKeyID>
+    </ApplyServerSideEncryptionByDefault>
+  </Rule>
+</ServerSideEncryptionConfiguration>
+```
+
+**说明**：
+- 设置桶的默认服务端加密；不带显式加密头的新对象使用该配置
+- `SSEAlgorithm`：`AES256`（SSE-S3）或 `aws:kms`（SSE-KMS）；`KMSMasterKeyID` 仅对 `aws:kms` 有意义
+
+**所需权限**：`s3:PutEncryptionConfiguration`（`WRITE`）
+
+**响应**：`200 OK`
+
+**错误响应**：
+- 404 Not Found：桶不存在
+- 403 Forbidden：`AccessDenied`
+- 400 Bad Request：`MalformedXML` 或 `InvalidArgument`（非法的 `SSEAlgorithm`）
+
+##### 1.19.2 获取桶加密（GetBucketEncryption）
+
+**URL**：`GET /<bucket>?encryption`
+
+**请求**：
+```http
+GET /mybucket?encryption HTTP/1.1
+Host: 127.0.0.1:8901
+Authorization: AWS4-HMAC-SHA256 Credential=<AK>/20230101/us-east-1/s3/aws4_request, SignedHeaders=..., Signature=...
+```
+
+**响应**（200 OK）：
+```xml
+<ServerSideEncryptionConfiguration xmlns="http://s3.amazonaws.com/doc/2006-03-01/">
+  <Rule>
+    <ApplyServerSideEncryptionByDefault>
+      <SSEAlgorithm>AES256</SSEAlgorithm>
+    </ApplyServerSideEncryptionByDefault>
+  </Rule>
+</ServerSideEncryptionConfiguration>
+```
+
+**错误响应**：
+- 404 Not Found：桶不存在，或 `ServerSideEncryptionConfigurationNotFoundError`（未加密）
+- 403 Forbidden：`AccessDenied`
+
+##### 1.19.3 删除桶加密（DeleteBucketEncryption）
+
+**URL**：`DELETE /<bucket>?encryption`
+
+**请求**：
+```http
+DELETE /mybucket?encryption HTTP/1.1
+Host: 127.0.0.1:8901
+Authorization: AWS4-HMAC-SHA256 Credential=<AK>/20230101/us-east-1/s3/aws4_request, SignedHeaders=..., Signature=...
+```
+
+**响应**：`204 No Content`
+
+**错误响应**：
+- 404 Not Found：桶不存在
+- 403 Forbidden：`AccessDenied`
+
+#### 1.20 桶日志（Bucket Logging）
+
+详见 [桶日志文档](bucketlogging_cn.md)。
+
+##### 1.20.1 获取桶日志配置（GetBucketLogging）
+
+**URL**：`GET /<bucket>?logging`
+
+**请求**：
+```http
+GET /mybucket?logging HTTP/1.1
+Host: 127.0.0.1:8901
+Authorization: AWS4-HMAC-SHA256 Credential=<AK>/20230101/us-east-1/s3/aws4_request, SignedHeaders=..., Signature=...
+```
+
+**响应**（200 OK）：未配置时返回空的 `<BucketLoggingStatus/>`；已启用时返回配置。完整 XML 载荷见[桶日志文档](bucketlogging_cn.md#配置方式)。
+
+**错误响应**：
+- 404 Not Found：桶不存在
+- 403 Forbidden：`AccessDenied`
+
+##### 1.20.2 设置桶日志（PutBucketLogging）
+
+**URL**：`PUT /<bucket>?logging`
+
+**请求**：XML `<BucketLoggingStatus>` 请求体，选择日志桶、前缀与（扩展）字段。完整的请求/响应与日志桶策略要求见[桶日志文档](bucketlogging_cn.md#配置方式)。
+
+**所需权限**：`s3:PutBucketLogging`（`FULL_CONTROL`）
+
+**错误响应**：
+- 404 Not Found：桶不存在，或日志桶不存在（`NoSuchKey`）
+- 400 Bad Request：`InvalidArgument`（目标为源桶 / 已配置日志 / 已加密 / Requester Pays）或 `MalformedXML`（非法的 `LoggingType`/`PartitionDateSource`）
+- 403 Forbidden：`AccessDenied`（日志桶策略未授权日志服务主体）
+
+##### 1.20.3 删除桶日志（DeleteBucketLogging）
+
+**URL**：`DELETE /<bucket>?logging`
+
+**请求**：
+```http
+DELETE /mybucket?logging HTTP/1.1
+Host: 127.0.0.1:8901
+Authorization: AWS4-HMAC-SHA256 Credential=<AK>/20230101/us-east-1/s3/aws4_request, SignedHeaders=..., Signature=...
+```
+
+**响应**：`204 No Content`
+
+**错误响应**：
+- 404 Not Found：桶不存在
+- 403 Forbidden：`AccessDenied`
+
+##### 1.20.4 立即投递日志（扩展）
+
+**URL**：`POST /<bucket>?logging`
+
+立即将待投递的访问日志 flush 成日志对象，并返回生成的日志对象 key（`FlushedLoggingObject`）。见[桶日志文档](bucketlogging_cn.md#配置方式)。
+
+#### 1.21 请求付费（Request Payment）
+
+##### 1.21.1 获取桶请求付费配置（GetBucketRequestPayment）
+
+**URL**：`GET /<bucket>?requestPayment`
+
+**请求**：
+```http
+GET /mybucket?requestPayment HTTP/1.1
+Host: 127.0.0.1:8901
+Authorization: AWS4-HMAC-SHA256 Credential=<AK>/20230101/us-east-1/s3/aws4_request, SignedHeaders=..., Signature=...
+```
+
+**响应**：
+```xml
+<?xml version="1.0" encoding="UTF-8"?>
+<RequestPaymentConfiguration xmlns="http://s3.amazonaws.com/doc/2006-03-01/">
+  <Payer>BucketOwner</Payer>
+</RequestPaymentConfiguration>
+```
+
+**说明**：`Payer` 为 `BucketOwner`（默认）或 `Requester`。
+
+**所需权限**：`s3:GetBucketRequestPayment`（`FULL_CONTROL`）
+
+**错误响应**：
+- 404 Not Found：桶不存在
+- 403 Forbidden：`AccessDenied`
+
+##### 1.21.2 设置桶请求付费（PutBucketRequestPayment）
+
+**URL**：`PUT /<bucket>?requestPayment`
+
+**请求**：
+```http
+PUT /mybucket?requestPayment HTTP/1.1
+Host: 127.0.0.1:8901
+Content-Type: application/xml
+Authorization: AWS4-HMAC-SHA256 Credential=<AK>/20230101/us-east-1/s3/aws4_request, SignedHeaders=..., Signature=...
+
+<RequestPaymentConfiguration xmlns="http://s3.amazonaws.com/doc/2006-03-01/">
+  <Payer>Requester</Payer>
+</RequestPaymentConfiguration>
+```
+
+**所需权限**：`s3:PutBucketRequestPayment`（`FULL_CONTROL`）
+
+**响应**：`200 OK`
+
+**错误响应**：
+- 404 Not Found：桶不存在
+- 403 Forbidden：`AccessDenied`
+- 400 Bad Request：`MalformedXML` — `Payer` 必须为 `BucketOwner` 或 `Requester`
+
+#### 1.22 桶对象所有权（Bucket Ownership Controls）
+
+##### 1.22.1 设置对象所有权（PutBucketOwnershipControls）
+
+**URL**：`PUT /<bucket>?ownershipControls`
+
+**请求**：
+```http
+PUT /mybucket?ownershipControls HTTP/1.1
+Host: 127.0.0.1:8901
+Content-Type: application/xml
+Authorization: AWS4-HMAC-SHA256 Credential=<AK>/20230101/us-east-1/s3/aws4_request, SignedHeaders=..., Signature=...
+
+<OwnershipControls xmlns="http://s3.amazonaws.com/doc/2006-03-01/">
+  <Rule>
+    <ObjectOwnership>BucketOwnerEnforced</ObjectOwnership>
+  </Rule>
+</OwnershipControls>
+```
+
+**说明**：
+- `ObjectOwnership`：`BucketOwnerEnforced`、`BucketOwnerPreferred` 或 `ObjectWriter`
+- `BucketOwnerEnforced` 不能在桶存在公开 ACL 时设置（`InvalidBucketAclWithObjectOwnership`）；该模式还会禁用对象 ACL
+
+**所需权限**：`s3:PutBucketOwnershipControls`（`FULL_CONTROL`）
+
+**响应**：`200 OK`
+
+**错误响应**：
+- 404 Not Found：桶不存在
+- 403 Forbidden：`AccessDenied`
+- 400 Bad Request：`MalformedXML`（非法 XML 或 `ObjectOwnership` 值）或 `InvalidBucketAclWithObjectOwnership`
+
+##### 1.22.2 获取对象所有权（GetBucketOwnershipControls）
+
+**URL**：`GET /<bucket>?ownershipControls`
+
+**请求**：
+```http
+GET /mybucket?ownershipControls HTTP/1.1
+Host: 127.0.0.1:8901
+Authorization: AWS4-HMAC-SHA256 Credential=<AK>/20230101/us-east-1/s3/aws4_request, SignedHeaders=..., Signature=...
+```
+
+**响应**（200 OK）：
+```xml
+<OwnershipControls xmlns="http://s3.amazonaws.com/doc/2006-03-01/">
+  <Rule>
+    <ObjectOwnership>BucketOwnerEnforced</ObjectOwnership>
+  </Rule>
+</OwnershipControls>
+```
+
+**所需权限**：`s3:GetBucketOwnershipControls`（`FULL_CONTROL`）
+
+**错误响应**：
+- 404 Not Found：桶不存在，或 `OwnershipControlsNotFoundError`（未配置）
+- 403 Forbidden：`AccessDenied`
+
+##### 1.22.3 删除对象所有权（DeleteBucketOwnershipControls）
+
+**URL**：`DELETE /<bucket>?ownershipControls`
+
+**请求**：
+```http
+DELETE /mybucket?ownershipControls HTTP/1.1
+Host: 127.0.0.1:8901
+Authorization: AWS4-HMAC-SHA256 Credential=<AK>/20230101/us-east-1/s3/aws4_request, SignedHeaders=..., Signature=...
+```
+
+**所需权限**：`s3:PutBucketOwnershipControls`（`FULL_CONTROL`）
+
+**响应**：`204 No Content`
+
+**错误响应**：
+- 404 Not Found：桶不存在
+- 403 Forbidden：`AccessDenied`
+
 
 ### 2. 对象操作（Object Operations）
 
@@ -1249,6 +1883,236 @@ Alice,35
 - `AccessDenied` — 无权限
 - `InvalidCompression` — 无效的压缩类型或损坏的 GZIP 数据
 - `InternalError` — 服务器内部错误
+
+#### 2.12 对象 ACL
+
+##### 2.12.1 获取对象 ACL（GetObjectAcl）
+
+**URL**：`GET /<bucket>/<key>?acl`
+
+**请求**：
+```http
+GET /mybucket/doc.txt?acl HTTP/1.1
+Host: 127.0.0.1:8901
+Authorization: AWS4-HMAC-SHA256 Credential=<AK>/20230101/us-east-1/s3/aws4_request, SignedHeaders=..., Signature=...
+```
+
+**响应**：
+```xml
+<?xml version="1.0" encoding="UTF-8"?>
+<AccessControlPolicy xmlns="http://s3.amazonaws.com/doc/2006-03-01/">
+  <Owner>
+    <ID>1</ID>
+    <DisplayName>admin</DisplayName>
+  </Owner>
+  <AccessControlList>
+    <Grant>
+      <Grantee xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:type="CanonicalUser">
+        <ID>1</ID>
+        <DisplayName>admin</DisplayName>
+      </Grantee>
+      <Permission>FULL_CONTROL</Permission>
+    </Grant>
+  </AccessControlList>
+</AccessControlPolicy>
+```
+
+**说明**：
+- 只有对象 owner（对象 ACL 中持有 `FULL_CONTROL` 的 canonical grantee，即上传者）或对该对象被授予 `READ_ACP`/`FULL_CONTROL` 的用户可读取。**不**回退到桶 ACL
+- 版本化桶中用 `?versionId=<id>` 选择指定版本
+
+**所需权限**：`s3:GetObjectAcl`（基于对象 ACL；桶策略可覆盖）
+
+**错误响应**：
+- 404 Not Found：桶或对象不存在
+- 403 Forbidden：`AccessDenied`
+
+##### 2.12.2 设置对象 ACL（PutObjectAcl）
+
+**URL**：`PUT /<bucket>/<key>?acl`
+
+**请求**（通过 `x-amz-acl` canned ACL 头）：
+```http
+PUT /mybucket/doc.txt?acl HTTP/1.1
+Host: 127.0.0.1:8901
+x-amz-acl: public-read
+Authorization: AWS4-HMAC-SHA256 Credential=<AK>/20230101/us-east-1/s3/aws4_request, SignedHeaders=..., Signature=...
+```
+
+或通过 XML `AccessControlPolicy` 请求体（结构与[获取对象 ACL](#2121-获取对象-aclgetobjectacl)相同，含一条或多条 `<Grant>`）。
+
+**说明**：
+- Canned ACL：`private`、`public-read`、`public-read-write`、`authenticated-read`、`bucket-owner-read`、`bucket-owner-full-control`（空 → `private`）
+- 只有对象 owner 或对该对象被授予 `WRITE_ACP`/`FULL_CONTROL` 的用户可修改；不回退到桶 ACL
+- `ObjectOwnership = BucketOwnerEnforced` 的桶会拒绝任何对象 ACL，返回 `AccessControlListNotSupported`（400）
+
+**所需权限**：`s3:PutObjectAcl`（基于对象 ACL；桶策略可覆盖）
+
+**响应**：`200 OK`
+
+**错误响应**：
+- 404 Not Found：桶或对象不存在
+- 403 Forbidden：`AccessDenied`
+- 400 Bad Request：`MalformedACLError`、`AccessControlListNotSupported` 或非法的 canned ACL
+
+#### 2.13 对象法定保留（Object Legal Hold）
+
+##### 2.13.1 获取对象法定保留（GetObjectLegalHold）
+
+**URL**：`GET /<bucket>/<key>?legal-hold`
+
+**请求**：
+```http
+GET /mybucket/doc.txt?legal-hold HTTP/1.1
+Host: 127.0.0.1:8901
+Authorization: AWS4-HMAC-SHA256 Credential=<AK>/20230101/us-east-1/s3/aws4_request, SignedHeaders=..., Signature=...
+```
+
+**响应**：
+```xml
+<?xml version="1.0" encoding="UTF-8"?>
+<LegalHold xmlns="http://s3.amazonaws.com/doc/2006-03-01/">
+  <Status>OFF</Status>
+</LegalHold>
+```
+
+**说明**：`Status` 为 `ON` 或 `OFF`。需要桶已启用对象锁定（Object Lock）；否则返回 `InvalidRequest`（400）。`?versionId=<id>` 选择指定版本。
+
+**所需权限**：`READ`
+
+**错误响应**：
+- 404 Not Found：桶或对象不存在
+- 400 Bad Request：`InvalidRequest` — 桶缺少对象锁定配置
+- 403 Forbidden：`AccessDenied`
+
+##### 2.13.2 设置对象法定保留（PutObjectLegalHold）
+
+**URL**：`PUT /<bucket>/<key>?legal-hold`
+
+**请求**：
+```http
+PUT /mybucket/doc.txt?legal-hold HTTP/1.1
+Host: 127.0.0.1:8901
+Content-Type: application/xml
+Authorization: AWS4-HMAC-SHA256 Credential=<AK>/20230101/us-east-1/s3/aws4_request, SignedHeaders=..., Signature=...
+
+<LegalHold xmlns="http://s3.amazonaws.com/doc/2006-03-01/">
+  <Status>ON</Status>
+</LegalHold>
+```
+
+**所需权限**：`WRITE`
+
+**响应**：`200 OK`
+
+**错误响应**：
+- 404 Not Found：桶或对象不存在
+- 400 Bad Request：`MalformedXML`（非法 Status）或 `InvalidRequest`（桶缺少对象锁定配置）
+- 403 Forbidden：`AccessDenied`
+
+#### 2.14 获取对象属性（GetObjectAttributes）
+
+**URL**：`GET /<bucket>/<key>`，携带 `x-amz-object-attributes` 头
+
+返回对象的选定元数据属性（多部分对象可含每个分片的属性），无需下载内容。
+
+**请求**：
+```http
+GET /mybucket/doc.txt HTTP/1.1
+Host: 127.0.0.1:8901
+x-amz-object-attributes: etag,checksum,storageclass,objectsize,objectparts
+Authorization: AWS4-HMAC-SHA256 Credential=<AK>/20230101/us-east-1/s3/aws4_request, SignedHeaders=..., Signature=...
+```
+
+**请求头**：
+| 头 | 说明 |
+|----|------|
+| `x-amz-object-attributes` | 逗号分隔的待返回属性：`etag`、`checksum`、`storageclass`、`objectsize`、`objectparts` |
+| `x-amz-max-parts` | 请求 `objectparts` 时最多返回的分片数 |
+| `x-amz-part-number-marker` | 从该分片号之后开始列出分片 |
+| `versionId`（查询参数） | 选择指定版本 |
+
+**响应**：
+```xml
+<?xml version="1.0" encoding="UTF-8"?>
+<GetObjectAttributesOutput xmlns="http://s3.amazonaws.com/doc/2006-03-01/">
+  <ETag>"d41d8cd98f00b204e9800998ecf8427e"</ETag>
+  <ObjectSize>0</ObjectSize>
+  <StorageClass>STANDARD</StorageClass>
+  <Checksum>
+    <ChecksumType>CRC32</ChecksumType>
+    <ChecksumCRC32>abcd==</ChecksumCRC32>
+  </Checksum>
+  <ObjectParts>
+    <IsTruncated>false</IsTruncated>
+    <MaxParts>1000</MaxParts>
+    <PartsCount>2</PartsCount>
+    <Part>
+      <PartNumber>1</PartNumber>
+      <Size>5242880</Size>
+    </Part>
+  </ObjectParts>
+</GetObjectAttributesOutput>
+```
+
+**说明**：
+- 版本化桶：默认最新版本，或 `versionId` 指定的版本；删除标记返回 `404 NoSuchKey` 并带 `x-amz-delete-marker: true`
+- SSE-C 加密对象需携带 customer key 头（与 HEAD 一致）
+- 多部分对象按分片返回 `PartNumber`、`Size` 与校验和（若存在），支持分页
+
+**所需权限**：`READ`
+
+**错误响应**：
+- 404 Not Found：桶或对象不存在
+- 403 Forbidden：`AccessDenied`
+- 400 Bad Request：SSE-C key 缺失或非法
+
+#### 2.15 复制分片上传（UploadPartCopy）
+
+**URL**：`PUT /<bucket>/<key>?partNumber=<N>&uploadId=<id>`，携带 `x-amz-copy-source`
+
+将源对象的字节区间（或整个对象）复制为进行中多部分上传的一个分片，无需下载/上传数据。
+
+**请求**：
+```http
+PUT /mybucket/dest.bin?partNumber=1&uploadId=<upload-id> HTTP/1.1
+Host: 127.0.0.1:8901
+x-amz-copy-source: /source-bucket/src.bin?versionId=<version-id>
+x-amz-copy-source-range: bytes=0-1048575
+Authorization: AWS4-HMAC-SHA256 Credential=<AK>/20230101/us-east-1/s3/aws4_request, SignedHeaders=..., Signature=...
+```
+
+**请求头**：
+| 头 | 说明 |
+|----|------|
+| `x-amz-copy-source` | `/bucket/key`，可带 `?versionId=`；源对象必须可读 |
+| `x-amz-copy-source-range` | `bytes=start-end` 待复制的字节区间（省略则复制整个对象） |
+| `x-amz-copy-source-server-side-encryption-customer-*` | SSE-C 加密源的 customer key |
+
+**响应**：标准 `CopyPartResult` XML（复制分片的 ETag 与 `LastModified`）。
+
+**所需权限**：目标 `s3:PutObject`，源 `s3:GetObject`
+
+**错误响应**：
+- 404 Not Found：桶或源对象不存在
+- 403 Forbidden：`AccessDenied`
+- 400 Bad Request：`InvalidRequest`（非法的 `uploadId`/`partNumber`/`x-amz-copy-source`）、`InvalidArgument`（非法的 range）
+
+#### 2.16 获取对象 Torrent（GetObjectTorrent）
+
+**URL**：`GET /<bucket>/<key>?torrent`
+
+StoreFS 不生成 torrent 文件。按 AWS 语义返回 `404 NoSuchKey`（未配置 torrent 支持）。
+
+**请求**：
+```http
+GET /mybucket/doc.txt?torrent HTTP/1.1
+Host: 127.0.0.1:8901
+Authorization: AWS4-HMAC-SHA256 Credential=<AK>/20230101/us-east-1/s3/aws4_request, SignedHeaders=..., Signature=...
+```
+
+**响应**：
+- 404 Not Found：`NoSuchKey` — 未配置 torrent 支持
 
 ## 桶名规范
 

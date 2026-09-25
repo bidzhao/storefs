@@ -1,8 +1,8 @@
 cluster:
   name: mycluster
   db:
-    host: "doris-fe"
-    port: 9030
+    host: "tidb"
+    port: 4000
     user: "root"
     password: ""
     database: "mydb"

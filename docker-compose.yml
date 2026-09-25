@@ -1,6 +1,6 @@
 services:
   node1:
-    image: bidzhao/storefs:0.5.1
+    image: bidzhao/storefs:0.5.2
     container_name: storefs-node1
     restart: unless-stopped
     networks:
@@ -34,7 +34,7 @@ services:
         max-file: "3"
 
   node2:
-    image: bidzhao/storefs:0.5.1
+    image: bidzhao/storefs:0.5.2
     container_name: storefs-node2
     restart: unless-stopped
     networks:
@@ -64,7 +64,7 @@ services:
         max-file: "3"
 
   node3:
-    image: bidzhao/storefs:0.5.1
+    image: bidzhao/storefs:0.5.2
     container_name: storefs-node3
     restart: unless-stopped
     networks:
@@ -93,80 +93,28 @@ services:
         max-size: "50m"
         max-file: "3"
 
-  doris-fe:
-    image: apache/doris:fe-4.1.3
-    container_name: doris-fe
-    hostname: doris-fe
-    restart: unless-stopped
-
+  tidb:
+    image: pingcap/tidb:v8.5.8
+    container_name: tidb
+    hostname: tidb
     ports:
-      - "8030:8030"
-      - "9030:9030"
-      - "9010:9010"
-
-    volumes:
-      - doris-fe-meta:/opt/apache-doris/fe/doris-meta
-      - doris-fe-log:/opt/apache-doris/fe/log
-
+      - "14000:4000"
+      - "10080:10080"
+    restart: unless-stopped
+    networks:
+      - storefs-net
     environment:
       TZ: Asia/Shanghai
-      FE_SERVERS: "fe1:172.30.0.10:9010"
-      FE_ID: "1"
-
-    healthcheck:
-      test:
-        [
-          "CMD-SHELL",
-          "mysql -h 127.0.0.1 -P 9030 -uroot -e 'SHOW FRONTENDS;' >/dev/null 2>&1"
-        ]
-      interval: 10s
-      timeout: 5s
-      retries: 30
-      start_period: 60s
-
-    networks:
-      storefs-net:
-        ipv4_address: 172.30.0.10
-
-  doris-be:
-    image: apache/doris:be-4.1.3
-    container_name: doris-be
-    hostname: doris-be
-    restart: unless-stopped
-
-    ports:
-      - "8040:8040"
-      - "9050:9050"
-      - "9060:9060"
-
-    volumes:
-      - doris-be-storage:/opt/apache-doris/be/storage
-      - doris-be-log:/opt/apache-doris/be/log
-
-    environment:
-      TZ: Asia/Shanghai
-      FE_SERVERS: "fe1:172.30.0.10:9010"
-      BE_ADDR: "172.30.0.20:9050"
-
-    depends_on:
-      doris-fe:
-        condition: service_healthy
-
-    networks:
-      storefs-net:
-        ipv4_address: 172.30.0.20
 
   init-db:
     image: alpine/mysql:15.2
-    container_name: doris-init
+    container_name: tidb-init
 
     networks:
       - storefs-net
     
     depends_on:
-      doris-fe:
-        condition: service_healthy
-      doris-be:
+      tidb:
         condition: service_started
 
     volumes:
@@ -184,11 +132,11 @@ services:
       - |
         set -e
 
-        echo "Waiting for Doris FE..."
+        echo "Waiting for TiDB..."
 
         until /usr/bin/mariadb \
-            -h doris-fe \
-            -P 9030 \
+            -h tidb \
+            -P 4000 \
             -uroot \
             -N \
             -e "SELECT 1" >/dev/null 2>&1
@@ -196,35 +144,16 @@ services:
             sleep 2
         done
         
-        echo "FE query service is ready."
+        echo "TiDB service is ready."
         
-        echo "Waiting for Doris BE..."
-        
-        until /usr/bin/mariadb \
-            -h doris-fe \
-            -P 9030 \
-            -uroot \
-            -N \
-            -e "
-                SELECT COUNT(*)
-                FROM backends()
-                WHERE Alive = 'true'
-                  AND SystemDecommissioned = 'false';
-            " 2>/dev/null | grep -q '^1$'
-        do
-            sleep 2
-        done
-        
-        echo "BE is registered and alive."
-        
-        echo "Waiting for Doris SQL read/write..."
+        echo "Waiting for TiDB SQL read/write..."
 
-        until /usr/bin/mariadb -h doris-fe -P 9030 -uroot -N -B -e "SELECT 1" 2>/dev/null; do
-            echo "Doris SQL is not ready, retrying..."
+        until /usr/bin/mariadb -h tidb -P 4000 -uroot -N -B -e "SELECT 1" 2>/dev/null; do
+            echo "TiDB SQL is not ready, retrying..."
             sleep 2
         done
         
-        echo "Doris SQL is ready."
+        echo "TiDB SQL is ready."
 
         if [ -f /init-done/.done ]; then
             echo "DB already initialized, skipping..."
@@ -232,11 +161,11 @@ services:
         fi
 
         echo "Running init.sql..."
-        /usr/bin/mariadb -h doris-fe -P9030 -uroot < /init.sql
+        /usr/bin/mariadb -h tidb -P4000 -uroot < /init.sql
         echo "Running catalog.sql..."
-        /usr/bin/mariadb -h doris-fe -P9030 -uroot < /catalog.sql
+        /usr/bin/mariadb -h tidb -P4000 -uroot < /catalog.sql
         echo "Running iceberg.sql..."
-        /usr/bin/mariadb -h doris-fe -P9030 -uroot < /iceberg.sql
+        /usr/bin/mariadb -h tidb -P4000 -uroot < /iceberg.sql
 
         echo "Marking init done..."
         touch /init-done/.done
@@ -250,8 +179,3 @@ networks:
       config:
         - subnet: 172.30.0.0/24
 
-volumes:
-  doris-fe-meta:
-  doris-fe-log:
-  doris-be-storage:
-  doris-be-log:

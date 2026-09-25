@@ -8,13 +8,13 @@
 
 #### 症状
 - 启动时提示 "database connection failed"
-- 无法连接到 MySQL 或 Apache Doris
+- 无法连接到 MySQL 或 TiDB
 
 #### 可能的原因和解决方案
 
 1. **数据库服务未启动**
    - 检查 MySQL 服务状态：`systemctl status mysql`
-   - 检查 Apache Doris 服务状态：`./fe/bin/start_fe.sh --status`
+   - 检查 TiDB 服务状态：`systemctl status tidb-server`（本地开发使用 `tiup playground` 时检查其进程）
    - 确保数据库服务正在运行
 
 2. **数据库配置错误**
@@ -23,13 +23,13 @@
      cluster:
        db:
          host: "127.0.0.1"
-         port: 9030
+         port: 4000
          user: "root"
          password: ""
          database: "mydb"
          timeout: 10s
      ```
-   - 确保配置与数据库实际设置一致
+   - 确保配置与数据库实际设置一致（请使用你的 TiDB 实例实际监听的端口；TiDB 默认 MySQL 协议端口为 `4000`）
 
 3. **防火墙或网络问题**
    - 检查防火墙规则，确保允许访问数据库端口
@@ -312,14 +312,16 @@ mysqldump -h <host> -P <port> -u <user> -p <database> > backup.sql
 mysql -h <host> -P <port> -u <user> -p <database> < backup.sql
 ```
 
-#### Apache Doris 备份
+#### TiDB 备份
+
+TiDB 兼容 MySQL 协议，可使用与 MySQL 相同的 `mysqldump`/`mysql` 方式；大数据量推荐使用官方导出工具 `dumpling`。
 
 ```bash
 # 备份元数据
-./fe/bin/backup_fe.sh
+dumpling -h <host> -P <port> -u <user> -p <password> -B <database> -o ./backup
 
 # 恢复元数据
-./fe/bin/restore_fe.sh
+mysql -h <host> -P <port> -u <user> -p <database> < backup.sql
 ```
 
 ### 2. 如何备份数据文件

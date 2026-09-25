@@ -60,7 +60,7 @@ curl -s -X POST "$ADMIN/api/iceberg/admin/enable" -H "Authorization: Bearer $TOK
 │  │     metadata/*.metadata.json · manifest-list · manifests │  │
 │  │     data/*.parquet                                       │  │
 │  └──────────────────────────────────────────────────────────┘  │
-│  Doris 元数据：iceberg_catalogs · iceberg_tables ·            │
+│  TiDB 元数据：iceberg_catalogs · iceberg_tables ·            │
 │                iceberg_table_heads · iceberg_commits · …       │
 └────────────────────────────────────────────────────────────────┘
 ```

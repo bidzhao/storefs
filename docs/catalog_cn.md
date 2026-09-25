@@ -48,7 +48,7 @@
 ┌──────────────────────────────────────────────────────────────────┐
 │                  CatalogBuilder (Go 独立进程)                     │
 │                                                                  │
-│  1. 扫描 Doris (object_md 表) 获取未处理的对象                   │
+│  1. 扫描 TiDB (object_md 表) 获取未处理的对象                   │
 │  2. 从 S3 下载对象内容                                           │
 │  3. 提取文本内容 (PDF, DOCX, HTML, 纯文本等)                     │
 │  4. 通过 LLM API 生成向量嵌入 (按 chunk 分块)                    │
@@ -216,7 +216,7 @@ CatalogBuilder 还使用对话 LLM 进行以下操作：
 ### 配置文件
 
 ```yaml
-doris:
+db:
   host: "<host>"
   port: 9030
   database: "mydb"
@@ -267,9 +267,9 @@ builder:
 
 | 配置段 | 字段 | 默认值 | 说明 |
 |--------|------|--------|------|
-| `doris` | `host` | `127.0.0.1` | Doris/MySQL 地址 |
-| `doris` | `port` | `9030` | Doris/MySQL 端口 |
-| `doris` | `database` | `mydb` | 数据库名 |
+| `db` | `host` | `127.0.0.1` | TiDB/MySQL 地址 |
+| `db` | `port` | `9030` | TiDB/MySQL 端口 |
+| `db` | `database` | `mydb` | 数据库名 |
 | `s3` | `endpoint` | `http://127.0.0.1:8901` | S3 端点，用于下载对象 |
 | `s3` | `access_key` | — | S3 访问密钥（需有读取权限） |
 | `s3` | `secret_key` | — | S3 密钥 |

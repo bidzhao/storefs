@@ -19,6 +19,8 @@
 - [目录搜索](#目录搜索)
 - [湖仓（Iceberg）](#湖仓iceberg)
 - [通知系统](#通知系统)
+- [IAM 与 STS](#iam-与-sts)
+- [桶日志](#桶日志)
 - [审计日志](#审计日志)
 - [任务系统](#任务系统)
 - [快速开始](#快速开始)
@@ -49,6 +51,9 @@ StoreFS是一个基于Go语言实现的分布式S3兼容存储系统，采用gos
 - **事件通知**：基于 Webhook 的桶级别事件通知，当对象创建或删除时自动触发。支持可配置的事件类型、对象键前缀/后缀过滤、HMAC-SHA256 签名验证、指数退避重试，以及原生和 AWS S3 兼容两种负载格式。
 - **目录搜索**：基于 OpenSearch 的全文检索和向量（语义）搜索，覆盖所有存储对象。支持混合搜索、SQL 模式查询、常见文档格式的自动内容提取，以及按权限过滤搜索结果。
 - **湖仓（Iceberg）**：内置基于 Apache Iceberg 的开放格式分析湖仓。提供完整的 Iceberg REST Catalog（命名空间、表、视图、提交、事务）、湖仓维护（快照过期 / 孤儿文件清理 / 元数据压缩）、专属 Web 控制台与 MCP 工具 —— 可直接对接 Apache Spark、Flink、Trino、DuckDB。
+- **IAM（身份与访问管理）**：与 AWS IAM 兼容的身份管理 —— 用户、组、策略、角色（含信任策略）、OIDC 身份提供方与账户，支持细粒度 `iam:` action 门控与基于身份策略的 S3 授权。详见 [IAM 文档](docs/iam_cn.md)。
+- **STS（安全令牌服务）**：与 AWS STS 兼容的短时临时凭证签发，通过 `AssumeRole`、`GetSessionToken`、`GetCallerIdentity` 与 `AssumeRoleWithWebIdentity`（OIDC Web 身份联邦）实现，支持会话策略。详见 [STS 文档](docs/sts_cn.md)。
+- **桶日志（Bucket Logging）**：与 S3 兼容的服务器访问日志，将请求记录攒批并作为对象投递到指定日志桶（单桶 `?logging` 或全局开关），支持 Standard（26 字段）与 Journal 两种日志格式、SimplePrefix/PartitionedPrefix 对象 key 与 best-effort 投递。详见 [桶日志文档](docs/bucketlogging_cn.md)。
 
 ### 核心概念
 
@@ -86,6 +91,12 @@ StoreFS是一个基于Go语言实现的分布式S3兼容存储系统，采用gos
 
 - **Notification（桶通知）**：桶级别的 Webhook 配置，当匹配的对象事件发生时自动发送 HTTP POST 请求。支持两种负载格式（native 和 AWS S3 兼容）、事件类型过滤、对象键前缀/后缀过滤，以及带指数退避的自动重试。通知持久化到投递队列，提供至少一次投递保证和 3 天 TTL。
 
+- **IAM**：与 AWS 兼容的身份与访问管理。IAM 用户/组与 legacy StoreFS 用户/组相互区分（按身份类型与组 path 识别）；IAM 主体默认**无隐式 S3 权限** —— 只能通过身份策略、桶策略与 ACL 显式授权。角色携带信任策略供 STS assume，OIDC 身份提供方启用 Web 身份联邦。详见 [IAM 文档](docs/iam_cn.md)。
+
+- **STS**：与 AWS 兼容的临时凭证。`AssumeRole` 将会话限定到角色的权限，`GetSessionToken` 为调用者自身身份签发凭证，会话策略只能收窄交集，`AssumeRoleWithWebIdentity` 用经验证通过的 OIDC ID Token 换取角色凭证。详见 [STS 文档](docs/sts_cn.md)。
+
+- **桶日志（Bucket Logging）**：与 S3 兼容的服务器访问日志。请求记录被攒批并作为日志对象投递到日志桶，投递目标按单桶 `?logging` 或全局集群开关解析。投递为 best-effort，绝不阻塞原始请求。详见 [桶日志文档](docs/bucketlogging_cn.md)。
+
 ### 集群架构
 
 StoreFS集群由多个节点组成，节点之间通过gossip协议进行通信，同时使用基于 Raft 的 leader 选举层来协调集群级别的单例服务（审计日志分区清理、生命周期扫描器）：
@@ -108,7 +119,7 @@ StoreFS使用YAML格式的配置文件（config.yaml），以下是配置项的�
 ```yaml
 cluster:
   name: mycluster              # 集群名称，所有节点必须使用相同的名称
-  db:                          # 数据库配置（使用Apache Doris作为元数据存储）
+  db:                          # 数据库配置（使用TiDB作为元数据存储）
     host: "127.0.0.1"          # 数据库主机地址
     port: 9030                 # MySQL查询端口
     user: "root"               # 数据库用户名
@@ -140,23 +151,17 @@ cluster:
 
 #### 步骤1：部署数据库
 
-StoreFS使用Apache Doris作为元数据存储，需要先部署Apache Doris：
+StoreFS使用TiDB作为元数据存储，需要先部署TiDB。TiDB 使用 MySQL 协议，因此可直接用 MySQL 客户端连接。
 
 ```bash
-# 下载并启动Apache Doris（单节点部署）
-url: https://doris.apache.org/download/
+# 使用 tiup 启动单节点 TiDB 集群（本地开发 / 单节点部署）
+tiup playground
 
-tar -xzf apache-doris-<versiion>-bin-x86_64.tar.gz
-cd apache-doris-<version>-bin-x86_64
+# TiDB 默认监听 MySQL 协议端口 4000；确认其就绪
+mysql -h 127.0.0.1 -P 4000 -uroot -e "SELECT 1"
 
-# 启动FE（Frontend）
-./fe/bin/start_fe.sh --daemon
-
-# 启动BE（Backend）
-./be/bin/start_be.sh --daemon
-
-# 初始化元数据（使用MySQL客户端连接）
-mysql -h db -P9030 -uroot < /init.sql
+# 初始化元数据（创建 StoreFS 期望的数据库/表结构）
+mysql -h 127.0.0.1 -P 4000 -uroot < /init.sql
 ```
 
 #### 步骤2：准备配置文件
@@ -215,7 +220,7 @@ docker-compose up -d
 ```
 
 Docker Compose会自动启动：
-- 1个Apache Doris数据库容器
+- 1个TiDB数据库容器
 - 3个StoreFS节点容器
 - 端口映射：节点1(7946/8901)、节点2(7947/8902)、节点3(7948/8903)
 
@@ -226,7 +231,7 @@ docker-compose stop
 
 ```bash
 # 清除Docker Compose容器
-docker-compose down -v
+docker-compose down
 rm -rf configs/db-init/
 ```
 
@@ -559,6 +564,49 @@ StoreFS 提供基于 Webhook 的事件通知系统，当桶中的对象被创建
 
 详细信息请参考：[通知系统文档](docs/notification_cn.md)
 
+## IAM 与 STS
+
+StoreFS 提供与 AWS IAM 兼容的身份与访问管理服务，以及与 AWS STS 兼容的安全令牌服务。您可以管理用户、组、策略、角色、OIDC 身份提供方与账户，并为委托或联邦访问签发短时临时凭证。
+
+### 主要特性（IAM）
+
+- **用户与组**：大小写不敏感的 IAM 用户（身份类型 `iam`）与组（path 非 `/`），每用户最多 2 个访问密钥，支持内联策略与附加 AWS 托管策略（`AmazonS3FullAccess`、`AmazonS3ReadOnlyAccess`、`IAMReadOnlyAccess` 等）
+- **角色与信任策略**：角色携带 `AssumeRolePolicyDocument`（声明谁可以 assume）、`MaxSessionDuration` 与标签；通过 STS assume
+- **OIDC 身份提供方**：注册受信任的 OpenID Connect 签发方（URL + 客户端 ID + 指纹），用于 Web 身份联邦
+- **策略引擎**：三值评估（`Deny > Allow > NoMatch`），支持 ABAC（`aws:PrincipalTag`、`s3:ResourceTag`、OIDC 派生 claims）与 IAM 管理自身的 `iam:<Action>` 门控
+- **账户**：默认账户作用域，支持 `GetAccountSummary` 配额统计
+- **无隐式权限**：IAM 主体仅能通过显式身份策略 `Allow`、同账户桶策略 `Allow` 或显式 ACL grant 获得授权
+
+### 主要特性（STS）
+
+- **AssumeRole**：限定为角色权限的临时凭证
+- **GetSessionToken**：代表调用者自身身份的临时凭证
+- **GetCallerIdentity**：返回当前凭证所属的账户/ARN/用户 ID
+- **AssumeRoleWithWebIdentity**：在密码学验证（OIDC discovery、JWKS、RS256/384/512 或 ES256/384/512 签名、`exp`/`nbf`/`iat`/`sub`/`aud` 校验）通过后，用 OIDC ID Token 换取角色凭证
+- **会话策略**：交集语义，只能收窄角色的权限
+- **过期机制**：默认 3600 秒会话时长，受角色 `MaxSessionDuration` 封顶；过期会话返回 `ExpiredToken`
+
+### 文档
+
+详细信息请参考：[IAM 文档](docs/iam_cn.md) 与 [STS 文档](docs/sts_cn.md)
+
+## 桶日志
+
+StoreFS 提供与 S3 兼容的**服务器访问日志（Bucket Logging）**。启用后，针对桶的请求记录会被攒批并作为日志对象投递到指定日志桶。
+
+### 主要特性
+
+- **Standard 与 Journal 格式**：AWS 26 字段 Standard 记录，或精简的 8 字段 Journal 格式（仅写操作，支持可选的前缀/后缀 key 过滤）
+- **SimplePrefix / PartitionedPrefix key**：`[前缀]YYYY-MM-DD-hh-mm-ss-<唯一串>` 或分区的 `账户/区域/桶/日期` 布局
+- **投递目标解析**：单桶 `?logging` 配置优先；全局集群开关（默认关闭）兜底其余桶
+- **Best-effort 投递**：日志记录与投递绝不阻塞或影响原始请求；投递失败仅告警并丢弃
+- **递归保护**：对某桶自身日志目标桶的写入请求永不记录
+- **日志桶策略**：投递要求日志桶策略授权日志服务主体（`logging.s3.amazonaws.com`），并带 `aws:SourceArn`/`aws:SourceAccount` 条件
+
+### 文档
+
+详细信息请参考：[桶日志文档](docs/bucketlogging_cn.md)
+
 ## 审计日志
 
 StoreFS 提供完整的审计日志系统，记录集群上所有管理操作和 S3 数据操作。每个 API 请求都会被捕获，包含详细的元数据，包括操作者、操作的资源、时间、客户端 IP、HTTP 状态码和处理耗时。
@@ -567,7 +615,7 @@ StoreFS 提供完整的审计日志系统，记录集群上所有管理操作和
 
 - **自动捕获**：每个 Admin API 和 S3 API 请求都会自动记录，无需修改应用程序
 - **丰富的元数据**：记录用户身份、操作类型、资源、客户端 IP、状态码、耗时、请求 ID 等
-- **多输出目标**：支持数据库（Apache Doris）、syslog（本地/远程）和文件输出
+- **多输出目标**：支持数据库（TiDB）、syslog（本地/远程）和文件输出
 - **异步处理**：审计条目通过缓冲通道在后台处理，从不阻塞请求处理
 - **批量插入**：数据库输出使用批量插入（100 条或 1 秒窗口），高效存储
 - **请求追踪**：每个请求携带唯一的 `X-Request-ID` 头部，用于跨集群的分布式追踪

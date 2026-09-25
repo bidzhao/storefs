@@ -20,6 +20,8 @@
 - [Catalog Search](#catalog-search)
 - [Lakehouse (Iceberg)](#lakehouse-iceberg)
 - [Notification System](#notification-system)
+- [IAM & STS](#iam--sts)
+- [Bucket Logging](#bucket-logging)
 - [Audit Log](#audit-log)
 - [Task System](#task-system)
 - [Quick Start](#quick-start)
@@ -50,6 +52,9 @@ This project uses Claude Code to automatically generate all codes and documentat
 - **Event Notifications**: Webhook-based event notifications for bucket-level object creation and deletion events. Supports configurable event types, object key prefix/suffix filters, HMAC-SHA256 signature verification, exponential backoff retry, and both native and AWS S3-compatible payload formats.
 - **Catalog Search**: Full-text and vector (semantic) search across all stored objects, backed by OpenSearch. Includes hybrid search, SQL-like queries, automatic content extraction from common document formats, and permission-aware result filtering.
 - **Lakehouse (Iceberg)**: Built-in open-format analytics lakehouse powered by Apache Iceberg. A full Iceberg REST Catalog (namespaces, tables, views, commits, transactions), lakehouse maintenance (snapshot expiration / orphan cleanup / compaction), a dedicated Web console, and MCP tools — connect Apache Spark, Flink, Trino or DuckDB directly.
+- **IAM (Identity and Access Management)**: AWS-IAM-compatible identity management — users, groups, policies, roles (with trust policies), OIDC identity providers, and accounts — with fine-grained `iam:` action gating and identity-policy-driven S3 authorization. See [IAM Documentation](docs/iam.md).
+- **STS (Security Token Service)**: AWS-STS-compatible issuance of short-lived temporary credentials via `AssumeRole`, `GetSessionToken`, `GetCallerIdentity`, and `AssumeRoleWithWebIdentity` (OIDC web identity federation), including session policies. See [STS Documentation](docs/sts.md).
+- **Bucket Logging**: S3-compatible server access logging that batches request records and delivers them as objects into a designated logging bucket (per-bucket `?logging` or a global switch), with Standard (26-field) and Journal log formats, SimplePrefix/PartitionedPrefix object keys, and best-effort delivery. See [Bucket Logging Documentation](docs/bucketlogging.md).
 
 ### Core Concepts
 
@@ -85,6 +90,12 @@ This project uses Claude Code to automatically generate all codes and documentat
 
 - **Notification**: A bucket-level webhook configuration that fires HTTP POST requests when matching object events occur. Supports two payload formats (native and AWS S3-compatible), event type filtering, object key prefix/suffix filtering, and automatic retry with exponential backoff. Notifications are persisted in a delivery queue with at-least-once delivery guarantees and 3-day TTL.
 
+- **IAM**: AWS-compatible identity and access management. IAM users/groups are distinct from legacy StoreFS users/groups (identified by identity type and group path); IAM principals have **no implicit S3 permissions** — access is granted via identity policies, bucket policies, and ACLs. Roles carry trust policies for STS assumption, and OIDC identity providers enable web-identity federation. See [IAM Documentation](docs/iam.md).
+
+- **STS**: AWS-compatible temporary credentials. `AssumeRole` scopes a session to a role's permissions, `GetSessionToken` issues credentials for the caller's own identity, session policies can only narrow the intersection, and `AssumeRoleWithWebIdentity` exchanges a verified OIDC ID token for role credentials. See [STS Documentation](docs/sts.md).
+
+- **Bucket Logging**: S3-compatible server access logging. Request records are batched and delivered as log objects to a logging bucket, resolved per-bucket (`?logging`) or via a global cluster switch. Delivery is best-effort and never blocks the original request. See [Bucket Logging Documentation](docs/bucketlogging.md).
+
 - **Taint**: A node status that marks a node as unhealthy or under maintenance. Tainted nodes are excluded from new data writes and object placement, while existing data remains readable. Nodes can be manually tainted by an administrator (for maintenance or troubleshooting) or automatically tainted when all disks are full. The taint state is propagated across the cluster via gossip protocol.
 
 - **Task**: A background administrative operation that runs on a target node for long-running maintenance activities. Tasks follow a lifecycle of Pending → Running → Completed / Failed / Cancelled. Supported task types include `repair` (scans and repairs corrupted file fragments) and `replacedisk` (migrates data from an old disk to a new disk).
@@ -111,7 +122,7 @@ StoreFS uses a YAML format configuration file (config.yaml). Here is a detailed 
 ```yaml
 cluster:
   name: mycluster              # Cluster name, all nodes must use the same name
-  db:                          # Database configuration (using Apache Doris as metadata storage)
+  db:                          # Database configuration (using TiDB as metadata storage)
     host: "127.0.0.1"          # Database host address
     port: 9030                 # MySQL query port
     user: "root"               # Database username
@@ -143,24 +154,20 @@ cluster:
 
 #### Step 1: Deploy Database
 
-StoreFS uses Apache Doris as metadata storage, so Apache Doris needs to be deployed first:
+StoreFS uses TiDB as metadata storage, so TiDB needs to be deployed first. TiDB speaks the MySQL protocol, so a MySQL client connects to it directly.
 
 ```bash
-# Download and start Apache Doris (single-node deployment)
-url: https://doris.apache.org/download/
+# Start a single-node TiDB cluster with tiup (local development / single-node deployment)
+tiup playground
 
-tar -xzf apache-doris-<versiion>-bin-x86_64.tar.gz
-cd apache-doris-<version>-bin-x86_64
+# TiDB listens on the MySQL protocol port 4000 by default; check it is ready
+mysql -h 127.0.0.1 -P 4000 -uroot -e "SELECT 1"
 
-# Start FE (Frontend)
-./fe/bin/start_fe.sh --daemon
-
-# Start BE (Backend)
-./be/bin/start_be.sh --daemon
-
-# Initialize metadata (using MySQL client to connect)
-mysql -h db -P9030 -uroot < /init.sql
+# Initialize metadata (create the database/schema that StoreFS expects)
+mysql -h 127.0.0.1 -P 4000 -uroot < /init.sql
 ```
+
+For production, see the [TiDB deployment documentation](https://docs.pingcap.com/tidb/stable/) for installing TiDB Server (tidb-server), PD, and TiKV, and set `cluster.db.port` in the StoreFS config accordingly.
 
 #### Step 2: Prepare Configuration File
 
@@ -218,7 +225,7 @@ docker-compose up -d
 ```
 
 Docker Compose will automatically start:
-- 1 Apache Doris database container
+- 1 TiDB database container
 - 3 StoreFS node containers
 - Port mapping: node1(7946/8901), node2(7947/8902), node3(7948/8903)
 
@@ -229,7 +236,7 @@ docker-compose stop
 
 ```bash
 # Clear Docker Compose containers
-docker-compose down -v
+docker-compose down
 rm -rf configs/db-init/
 ```
 
@@ -561,6 +568,49 @@ StoreFS provides a webhook-based event notification system that fires HTTP POST 
 
 For detailed information, please refer to: [Notification System Documentation](docs/notification.md)
 
+## IAM & STS
+
+StoreFS provides an AWS-IAM-compatible identity and access management service together with an AWS-STS-compatible security token service. You can manage users, groups, policies, roles, OIDC identity providers, and accounts, and issue short-lived temporary credentials for delegated or federated access.
+
+### Key Features (IAM)
+
+- **Users & Groups**: Case-insensitive IAM users (identity type `iam`) and groups (path other than `/`), each with access keys (up to 2 per user), inline policies, and attached AWS managed policies (`AmazonS3FullAccess`, `AmazonS3ReadOnlyAccess`, `IAMReadOnlyAccess`, etc.)
+- **Roles & Trust Policies**: Roles with an `AssumeRolePolicyDocument` (who may assume them), `MaxSessionDuration`, and tags; assumed via STS
+- **OIDC Identity Providers**: Register trusted OpenID Connect issuers (URL + client IDs + thumbprints) for web-identity federation
+- **Policy Engine**: Three-valued evaluation (`Deny > Allow > NoMatch`), ABAC support (`aws:PrincipalTag`, `s3:ResourceTag`, OIDC-derived claims), and `iam:<Action>` gating for IAM management itself
+- **Account**: Default-account scoping with `GetAccountSummary` quotas
+- **No Implicit Permissions**: IAM principals are only authorized by explicit identity-policy `Allow`, same-account bucket-policy `Allow`, or explicit ACL grants
+
+### Key Features (STS)
+
+- **AssumeRole**: Temporary credentials scoped to a role's permissions
+- **GetSessionToken**: Temporary credentials representing the caller's own identity
+- **GetCallerIdentity**: Return the account/ARN/user ID of the current credentials
+- **AssumeRoleWithWebIdentity**: Exchange an OIDC ID token for role credentials after cryptographic verification (OIDC discovery, JWKS, RS256/384/512 or ES256/384/512 signatures, `exp`/`nbf`/`iat`/`sub`/`aud` validation)
+- **Session Policies**: An intersection that can only narrow a role's permissions
+- **Expiration**: Default 3600 s session duration, capped by the role's `MaxSessionDuration`; expired sessions fail with `ExpiredToken`
+
+### Documentation
+
+For detailed information, please refer to: [IAM Documentation](docs/iam.md) and [STS Documentation](docs/sts.md)
+
+## Bucket Logging
+
+StoreFS provides S3-compatible **server access logging**. When enabled, records of requests to a bucket are batched and delivered as log objects into a designated logging bucket.
+
+### Key Features
+
+- **Standard & Journal Formats**: AWS 26-field Standard records, or a compact 8-field Journal format (write operations only, with optional prefix/suffix key filtering)
+- **SimplePrefix / PartitionedPrefix Keys**: `[prefix]YYYY-MM-DD-hh-mm-ss-<unique>` or partitioned `account/region/bucket/date` key layouts
+- **Target Resolution**: Per-bucket `?logging` configuration takes priority; a global cluster switch (default off) covers the rest
+- **Best-Effort Delivery**: Logging never blocks or fails the original request; failed deliveries are dropped with a warning
+- **Recursion Protection**: Requests writing into a bucket's own logging target are never recorded
+- **Log Bucket Policy**: Delivery requires the log bucket policy to authorize the logging service principal (`logging.s3.amazonaws.com`) with `aws:SourceArn`/`aws:SourceAccount` conditions
+
+### Documentation
+
+For detailed information, please refer to: [Bucket Logging Documentation](docs/bucketlogging.md)
+
 ## Audit Log
 
 StoreFS provides a comprehensive audit logging system that records all administrative and S3 data operations performed on the cluster. Every API request is captured with detailed metadata including who performed the action, what resource was affected, when it happened, the client IP, the HTTP status code, and the processing duration.
@@ -569,7 +619,7 @@ StoreFS provides a comprehensive audit logging system that records all administr
 
 - **Automatic Capture**: Every Admin API and S3 API request is automatically logged with no application changes needed
 - **Rich Metadata**: Records user identity, operation type, resource, client IP, status code, duration, request ID, and more
-- **Multiple Outputs**: Supports database (Apache Doris), syslog (local/remote), and file output destinations
+- **Multiple Outputs**: Supports database (TiDB), syslog (local/remote), and file output destinations
 - **Asynchronous Processing**: Audit entries are processed in the background via a buffered channel, never blocking request handling
 - **Batch Inserts**: Database output uses batch inserts (100 entries or 1-second window) for efficient storage
 - **Request Tracing**: Each request receives a unique `X-Request-ID` header for distributed tracing across the cluster
