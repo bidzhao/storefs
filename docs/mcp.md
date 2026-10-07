@@ -57,22 +57,35 @@ The MCP server is a lightweight Node.js process that acts as a bridge:
 
 ### 1. Install
 
+**Option A — npm (recommended):**
+
+```bash
+npm install -g storefs-mcp
+```
+
+This installs the global `storefs` command, which starts the MCP server over stdio.
+
+**Option B — from source tarball:**
+
 ```bash
 tar -xzf mcp.tar.gz
 cd mcp
 npm install
+npm run build   # tsc → dist/
 ```
 
 ### 2. Configure
 
-Configure the MCP server in your project's `.claude/settings.json` (or global `~/.claude/settings.json`):
+Register the MCP server in your AI client.
+
+**Claude Code** — edit `~/.claude/settings.json` (global) or `.claude/settings.json` (project-local). If installed via npm:
 
 ```json
 {
   "mcpServers": {
     "storefs": {
-      "command": "node",
-      "args": ["/absolute/path/to/mcp/index.js"],
+      "command": "storefs",
+      "args": [],
       "env": {
         "STOREFS_ADMIN_URL": "http://127.0.0.1:7946",
         "STOREFS_S3_URL": "http://127.0.0.1:8901"
@@ -80,6 +93,31 @@ Configure the MCP server in your project's `.claude/settings.json` (or global `~
     }
   }
 }
+```
+
+If running from source (`node` + absolute path):
+
+```json
+{
+  "mcpServers": {
+    "storefs": {
+      "command": "node",
+      "args": ["/absolute/path/to/mcp/dist/index.js"],
+      "env": {
+        "STOREFS_ADMIN_URL": "http://127.0.0.1:7946",
+        "STOREFS_S3_URL": "http://127.0.0.1:8901"
+      }
+    }
+  }
+}
+```
+
+**Codex CLI** — edit `~/.codex/config.toml`:
+
+```toml
+[mcp_servers.storefs]
+command = "storefs"
+env = { STOREFS_ADMIN_URL = "http://127.0.0.1:7946", STOREFS_S3_URL = "http://127.0.0.1:8901" }
 ```
 
 Environment variables:
@@ -129,14 +167,12 @@ If the user account has **MFA (TOTP)** enabled, `storefs_login` with password wi
 3. **Or set the `STOREFS_PAT` environment variable** in the MCP server config so the PAT is loaded automatically on startup:
    ```json
    {
-     "mcp": {
-       "servers": {
-         "storefs": {
-           "command": "node",
-           "args": ["/path/to/mcp/index.js"],
-           "env": {
-             "STOREFS_PAT": "stfs_xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"
-           }
+     "mcpServers": {
+       "storefs": {
+         "command": "storefs",
+         "args": [],
+         "env": {
+           "STOREFS_PAT": "stfs_xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"
          }
        }
      }
@@ -172,8 +208,8 @@ The MCP server exposes **90+ tools** organized into twelve groups:
 |------|-------------|
 | `storefs_list_users` | List users with pagination and group filter |
 | `storefs_get_user` | Get detailed user info |
-| `storefs_create_user` | Create user (auto-generates AccessKey/SecretKey) |
-| `storefs_update_user` | Update user role, name, or group |
+| `storefs_create_user` | Create user (`email` required, unique; auto-generates AccessKey/SecretKey) |
+| `storefs_update_user` | Update user role, name, email, or group |
 | `storefs_delete_user` | Delete a user |
 | `storefs_get_access_keys` | Show a user's AccessKey/SecretKey |
 | `storefs_rotate_access_keys` | Regenerate keys (old ones become invalid) |

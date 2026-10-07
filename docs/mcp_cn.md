@@ -57,22 +57,35 @@ MCP 服务器是一个轻量级的 Node.js 进程，充当桥梁角色：
 
 ### 1. 安装
 
+**方式 A — npm（推荐）：**
+
+```bash
+npm install -g storefs-mcp
+```
+
+安装后全局 `storefs` 命令可用，通过 stdio 启动 MCP 服务器。
+
+**方式 B — 源码包：**
+
 ```bash
 tar -xzf mcp.tar.gz
 cd mcp
 npm install
+npm run build   # tsc → dist/
 ```
 
 ### 2. 配置
 
-在项目的 `.claude/settings.json`（或全局 `~/.claude/settings.json`）中配置 MCP 服务器：
+在 AI 客户端中注册 MCP 服务器。
+
+**Claude Code** — 编辑 `~/.claude/settings.json`（全局）或 `.claude/settings.json`（项目）。使用 npm 安装时：
 
 ```json
 {
   "mcpServers": {
     "storefs": {
-      "command": "node",
-      "args": ["/绝对路径/mcp/index.js"],
+      "command": "storefs",
+      "args": [],
       "env": {
         "STOREFS_ADMIN_URL": "http://127.0.0.1:7946",
         "STOREFS_S3_URL": "http://127.0.0.1:8901"
@@ -80,6 +93,31 @@ npm install
     }
   }
 }
+```
+
+使用源码运行时（`node` + 绝对路径）：
+
+```json
+{
+  "mcpServers": {
+    "storefs": {
+      "command": "node",
+      "args": ["/绝对路径/mcp/dist/index.js"],
+      "env": {
+        "STOREFS_ADMIN_URL": "http://127.0.0.1:7946",
+        "STOREFS_S3_URL": "http://127.0.0.1:8901"
+      }
+    }
+  }
+}
+```
+
+**Codex CLI** — 编辑 `~/.codex/config.toml`：
+
+```toml
+[mcp_servers.storefs]
+command = "storefs"
+env = { STOREFS_ADMIN_URL = "http://127.0.0.1:7946", STOREFS_S3_URL = "http://127.0.0.1:8901" }
 ```
 
 环境变量：
@@ -129,14 +167,12 @@ storefs_login(username="admin", password="your-password")
 3. **或设置环境变量**：在 MCP 配置中指定 `STOREFS_PAT`，启动时自动加载，无需手动登录：
    ```json
    {
-     "mcp": {
-       "servers": {
-         "storefs": {
-           "command": "node",
-           "args": ["/path/to/mcp/index.js"],
-           "env": {
-             "STOREFS_PAT": "stfs_xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"
-           }
+     "mcpServers": {
+       "storefs": {
+         "command": "storefs",
+         "args": [],
+         "env": {
+           "STOREFS_PAT": "stfs_xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"
          }
        }
      }
@@ -172,8 +208,8 @@ MCP 服务器提供 **90+ 工具**，分为十二个功能组：
 |------|------|
 | `storefs_list_users` | 查询用户列表（支持分页和分组过滤） |
 | `storefs_get_user` | 获取用户详细信息 |
-| `storefs_create_user` | 创建用户（自动生成 AccessKey/SecretKey） |
-| `storefs_update_user` | 更新用户角色、名称或分组 |
+| `storefs_create_user` | 创建用户（`email` 必填且唯一；自动生成 AccessKey/SecretKey） |
+| `storefs_update_user` | 更新用户角色、名称、邮箱或分组 |
 | `storefs_delete_user` | 删除用户 |
 | `storefs_get_access_keys` | 查看用户的 AccessKey/SecretKey |
 | `storefs_rotate_access_keys` | 重新生成密钥（旧密钥将失效） |
