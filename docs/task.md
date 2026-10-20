@@ -24,10 +24,14 @@ Pending → Running → Completed / Failed / Cancelled
 
 | Task Type | Concurrency Mode | Constraint |
 |---|---|---|
-| `repair` | Per-node singleton | One repair per node at a time; different nodes can repair simultaneously |
-| `replacedisk` | Per-node singleton | One replacedisk per node at a time; different nodes can run simultaneously |
+| `repair` | Cluster singleton | Runs exclusively with the other maintenance tasks |
+| `replacedisk` | Cluster singleton | Runs exclusively with the other maintenance tasks |
+| `rebalance` | Cluster singleton | Runs exclusively with the other maintenance tasks (leader only) |
+| `decommission` | Cluster singleton | Runs exclusively with the other maintenance tasks |
 
-Both `repair` and `replacedisk` tasks require **super_admin** role to create.
+All four maintenance task types (`repair`, `replacedisk`, `rebalance`, `decommission`) share a **single cluster-wide maintenance mutex** — at most one of them can be pending/running at any time, across all nodes. Creating one while another is pending/running is rejected.
+
+All four task types require **super_admin** role to create.
 
 ---
 
@@ -162,6 +166,123 @@ Content-Type: application/json
 
 ---
 
+## Task: `rebalance`
+
+Rebalances storage usage across the cluster so that no disk is significantly over- or under-utilized. Runs **on the raft leader** only, and is mutually exclusive with `repair`, `replacedisk`, and `decommission`.
+
+### When to Use
+
+- A newly added node/disk is mostly empty while existing disks are full
+- Disk usage has become skewed after decommission or replacement
+- You want to proactively keep disks balanced
+
+### Parameters
+
+None. The plan is computed automatically from the current cluster balance.
+
+### What It Does
+
+1. **Collects** disk usage from all online nodes (per-disk).
+2. **Computes** the balance; if the max deviation is within 5%, it exits immediately (`already_balanced_within_5pct`).
+3. **Plans** migrations (source disks over budget → target disks under budget), respecting anti-affinity.
+4. **Migrates** fragments with a worker pool (raw copy + row move + source delete; missing source files are rebuilt from sibling shards/replicas).
+5. **Exits** when the deviation drops back within 2% or the queue is exhausted; stops early if the topology changes.
+
+### MCP Tool
+
+```
+storefs_create_rebalance_task()
+```
+
+### REST API
+
+```
+POST /api/tasks
+Content-Type: application/json
+
+{
+  "type": "rebalance",
+  "params": {}
+}
+```
+
+### Result Fields
+
+| Field | Description |
+|---|---|
+| `totalPlanned` | Number of planned migrations |
+| `migratedFiles` | Successfully migrated fragments |
+| `migratedBytes` | Total bytes migrated |
+| `failedFiles` | Fragments that failed to migrate |
+| `skippedFiles` | Fragments skipped (target tainted, etc.) |
+| `imbalanceBefore` / `imbalanceAfter` | Max deviation before/after (×100 %) |
+| `topologyChanged` | Whether the task stopped due to a topology change |
+| `exitReason` | `balanced` / `migrated` / `topology_changed` / `cancelled` |
+
+---
+
+## Task: `decommission`
+
+Migrates **all** data off a node so it can be removed from the cluster. Mutually exclusive with `repair`, `replacedisk`, and `rebalance`.
+
+### When to Use
+
+- Decommissioning a server permanently
+- Consolidating storage onto fewer nodes
+
+### Parameters
+
+| Parameter | Type | Required | Description |
+|---|---|---|---|
+| `nodeName` | string | Yes | The node to decommission (its fragments are migrated off) |
+| `forceRestore` | bool | No | When the source node is **offline**, set `true` to rebuild its fragments from sibling shards/replicas (slower than online migration). An offline source with `forceRestore=false` is rejected with `409`. |
+
+### What It Does
+
+1. **Validates** the source node is online (or `forceRestore` is set) and that enough eligible nodes remain to satisfy all storage policies.
+2. **Marks** the node `decommission` (blocks new writes) at task start.
+3. **Migrates** `completed` fragments first, then `pending`/`failure` fragments (last, with a 30-minute timeout).
+4. **Verifies** the source is empty, waits for gossip propagation, re-scans, then atomically marks the node `removed` and the task `completed`.
+
+### MCP Tool
+
+```
+storefs_create_decommission_task(
+  nodeName: "node3",
+  forceRestore: false
+)
+```
+
+### REST API
+
+```
+POST /api/tasks
+Content-Type: application/json
+
+{
+  "type": "decommission",
+  "params": {
+    "nodeName": "node3",
+    "forceRestore": false
+  }
+}
+```
+
+### Result Fields
+
+| Field | Description |
+|---|---|
+| `phase` | `completed` / `pending_timeout` / `migrated` / `cancelled` / `blocked` |
+| `totalFragments` | Total fragments on the source node |
+| `migratedFiles` / `migratedBytes` | Successfully migrated fragments / bytes |
+| `failedFiles` | Fragments that failed to migrate |
+| `skippedFiles` | Fragments skipped (soft-deleted buckets, etc.) |
+| `pendingTotal` / `pendingMigrated` / `pendingUnmoved` | Pending-class fragment counts |
+| `nodeEmpty` | Whether the source is fully drained |
+| `exitReason` | `completed` / `pending_timeout` / `queue_exhausted` / `cancelled` |
+
+---
+
 ## Managing Tasks
 
 ### List Tasks
@@ -192,6 +313,18 @@ storefs_cancel_task(taskId: "123456")
 
 # REST
 POST /api/tasks/123456/cancel
+```
+
+### Force-Cancel a Task (super_admin)
+
+A normal cancel is rejected when the execution node is `Unknown`/`Offline`. Force-cancel bypasses that liveness check (still respecting the task state machine — `completed`/`failed` are never overwritten).
+
+```bash
+# MCP
+storefs_force_cancel_task(taskId: "123456")
+
+# REST
+POST /api/tasks/123456/force-cancel
 ```
 
 ### Delete a Task
@@ -226,6 +359,10 @@ Content-Type: application/json
 | List / View tasks | Any authenticated user |
 | Create `repair` task | `super_admin` |
 | Create `replacedisk` task | `super_admin` |
-| Create other task types | Varies by type |
-| Cancel / Delete tasks | Varies by type |
+| Create `rebalance` task | `super_admin` |
+| Create `decommission` task | `super_admin` |
+| Cancel task | Any authenticated user (liveness-checked) |
+| Force-cancel task | `super_admin` |
+| Delete task | Any authenticated user |
 | Clean up old tasks | `super_admin` |
+| Backfill target_node | `super_admin` |

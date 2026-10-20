@@ -12,6 +12,7 @@
 - [Management Console](#management-console)
 - [User Roles and Groups](#user-roles-and-groups)
 - [S3 API](#s3-api)
+- [NV-RDMA Transport (NVIDIA cuObject interop)](#nv-rdma-transport-nvidia-cuobject-interop)
 - [Admin API](#admin-api)
 - [s3file CLI](#s3file-cli)
 - [Gateway (NFS/SMB)](#gateway-nfssmb)
@@ -47,7 +48,7 @@ This project uses Claude Code to automatically generate all codes and documentat
 - **Security**: Supports object versioning (keeps historical versions and prevents accidental deletion), object locking (WORM model with Governance and Compliance modes), bucket-level AES-256-CTR encryption, SSE-C (client-provided encryption keys), and SSE-KMS (external key management via KMS, currently KMIP 1.2+, with future cloud provider support) for data protection. **MFA (TOTP)**: Two-factor authentication for the admin console, with Personal Access Token (PAT) support for programmatic access.
 - **Gzip Compression**: PutObject and Multipart Upload support gzip-compressed request bodies via Content-Encoding header.
 - **s3file CLI**: Interactive S3FS mode for browsing objects like a local file system, with Ctrl+C cancellation support.
-- **Task Management**: Background task system for long-running administrative operations such as repairing corrupted fragments and replacing failed disks, with progress tracking and cancel support.
+- **Task Management**: Background task system for long-running administrative operations — repairing corrupted fragments, replacing failed disks, rebalancing cluster disk usage, and decommissioning nodes — with progress tracking and cancel support.
 - **Node Taint**: Mark nodes as taint to prevent new data writes, or activate them back — useful for node maintenance, disk replacement, or troubleshooting scenarios.
 - **Event Notifications**: Webhook-based event notifications for bucket-level object creation and deletion events. Supports configurable event types, object key prefix/suffix filters, HMAC-SHA256 signature verification, exponential backoff retry, and both native and AWS S3-compatible payload formats.
 - **Catalog Search**: Full-text and vector (semantic) search across all stored objects, backed by OpenSearch. Includes hybrid search, SQL-like queries, automatic content extraction from common document formats, and permission-aware result filtering.
@@ -98,7 +99,7 @@ This project uses Claude Code to automatically generate all codes and documentat
 
 - **Taint**: A node status that marks a node as unhealthy or under maintenance. Tainted nodes are excluded from new data writes and object placement, while existing data remains readable. Nodes can be manually tainted by an administrator (for maintenance or troubleshooting) or automatically tainted when all disks are full. The taint state is propagated across the cluster via gossip protocol.
 
-- **Task**: A background administrative operation that runs on a target node for long-running maintenance activities. Tasks follow a lifecycle of Pending → Running → Completed / Failed / Cancelled. Supported task types include `repair` (scans and repairs corrupted file fragments) and `replacedisk` (migrates data from an old disk to a new disk).
+- **Task**: A background administrative operation that runs on a target node for long-running maintenance activities. Tasks follow a lifecycle of Pending → Running → Completed / Failed / Cancelled. Supported task types include `repair` (scans and repairs corrupted file fragments), `replacedisk` (migrates data from an old disk to a new disk), `rebalance` (rebalances cluster disk usage, runs on the leader), and `decommission` (migrates all data off a node).
 
 ### Cluster Architecture
 
@@ -150,6 +151,8 @@ cluster:
     - 127.0.0.1:7948
 ```
 
+> **Important — seed node startup order**: At least one node from the `seeds` list must be started **first** before any node *not* in the `seeds` list can join the cluster. On startup, each node contacts the seed addresses to join the cluster; if no seed node is online, a non-seed node's join fails (silently, not retried) and it will not become part of the cluster. Always start the seed nodes first, then the remaining nodes.
+
 ### 2. Physical Machine/Cloud Virtual Machine Deployment
 
 #### Step 1: Deploy Database
@@ -179,7 +182,7 @@ Create a configuration file for each node (such as config1.yaml, config2.yaml, e
 # Download the StoreFS binary file for the corresponding platform
 e.g., storefs_linux_x86_64
 
-# Start node 1
+# Start node 1 (must be one of the `seeds` nodes — start seed nodes first)
 ./storefs_linux_x86_64 -config config1.yaml
 
 # Start node 2 (in another terminal)
@@ -188,6 +191,8 @@ e.g., storefs_linux_x86_64
 # Start node 3 (in another terminal)
 ./storefs_linux_x86_64 -config config3.yaml
 ```
+
+> **Startup order requirement**: Start at least one node from the `seeds` list first (e.g. config1.yaml when `127.0.0.1:7946` is a seed). Nodes not in `seeds` can only join the cluster if a seed node is already online.
 
 ### 3. Linux Binary Versions
 
@@ -229,10 +234,7 @@ Docker Compose will automatically start:
 - 3 StoreFS node containers
 - Port mapping: node1(7946/8901), node2(7947/8902), node3(7948/8903)
 
-```bash
-# Stop Docker Compose
-docker-compose stop
-```
+> **Note**: The Docker Compose setup defines the `seeds` list to include all three nodes, and compose's dependency ordering starts the containers together — all nodes join each other. If you customize the seed list (e.g. only node1 is a seed), make sure a seed node is started first before non-seed nodes, per the startup order requirement above.
 
 ```bash
 # Clear Docker Compose containers
@@ -369,6 +371,63 @@ When StoreFS receives a GET request for an object:
 
 Public access only applies to GET requests for objects. All other operations (upload, delete, list, etc.) still require proper authentication and authorization.
 
+## NV-RDMA Transport (NVIDIA cuObject interop)
+
+> **StoreFS NV-RDMA transport prototype with NVIDIA cuObject Client
+> system-memory interoperability** — an independent Dynamic-Connect (DC)
+> data plane for NVIDIA cuObject interop over the S3 HTTP control plane.
+
+NV-RDMA is a **separate** transport from Private RDMA (which keys on
+`X-RDMA-Request-ID`). NV-RDMA uses its own headers:
+
+| Header | Meaning |
+|---|---|
+| `x-amz-rdma-token` | cuObject-format token (NVIDIA `cuMemObjGetRDMAToken` output, base64) — **NV-RDMA only** |
+| `x-amz-rdma-reply` | disposition: `200` on success, `501` on any decline |
+| `x-amz-rdma-bytes-transferred` | bytes moved for GET / range-GET |
+
+### Platform matrix
+
+| Platform | NV-RDMA | Private RDMA |
+|---|---|---|
+| linux/amd64, linux/arm64 | ✅ | ✅ |
+| **linux/riscv64** | ❌ (no NVIDIA CUDA — compiled out) | ✅ |
+| darwin (dev) | stub (`ErrUnsupported`) | stub |
+
+On **riscv64**, NV-RDMA is **compiled out** at build time (build tags
+`linux && !nordma && !riscv64`); only Private RDMA is available. Building a
+riscv64 binary never references the cuObject/cgo data plane.
+
+### Behavior
+
+- Token requests are handled **after authorization** (SigV4 → IAM/ACL/Bucket
+  Policy always precede RDMA); the token is **not** an authorization
+  credential.
+- Success: `HTTP 200` + `x-amz-rdma-reply: 200` (GET adds bytes-transferred;
+  range → `206`).
+- Decline (disabled/invalid/expired/replay/unsupported/DCI-unavailable/
+  timeout/>1 GiB): `HTTP 501` + `x-amz-rdma-reply: 501`. The server **never**
+  auto-falls back to the HTTP body; the client may retry as plain S3.
+- Configuration lives under `nvrdma:` in the YAML (see `example/config*.yaml`);
+  `enabled: true` on unsupported platforms fails startup fast.
+- `nvrdma.mockgpu` selects the memory/token source AND the data plane — both
+  use the **same** `x-amz-rdma-token` wire format:
+  - `mockgpu: true` → host-RAM memory + mock cuObject-format token; server
+    uses the **RC data plane** (Soft-RoCE rxe capable — no GPU / SDK /
+    mlx5 hardware needed). Full cuObject protocol simulation with RAM in
+    place of GPU memory.
+  - `mockgpu: false` (default) → real NVIDIA cuObject GPU memory + SDK
+    token; server uses the **mlx5 DC data plane** (needs mlx5 ConnectX DCX
+    hardware + the SDK; fails fast at startup if either is absent).
+  The server parses both with the same code path; only the data plane and
+  validator are selected by `mockgpu`.
+
+### Client
+
+See `examples/rdma/nvrdma/c/` for the Phase-1 NVIDIA cuObject SDK client
+(host-RAM system memory; no GPU required). The real `cuobj_adapter` binding
+follows the installed NVIDIA cuObject SDK headers on the target machine.
+
 ## Admin API
 
 ### Overview
@@ -391,8 +450,8 @@ Main implemented API interfaces include:
 - **Bucket ACL Management**: Get/set bucket ACL via JSON API
 - **Bucket Notification Management**: Create/update/delete/list bucket webhook notifications, test webhook endpoints
 - **KMS Management**: Manage multiple KMS service configurations, test KMS connections, check KMS health, create/list/update/delete/rotate KMS keys
-- **Node Management**: View node status, get taint status, update taint status, query Raft leader
-- **Task Management**: List task types, create/cancel/cleanup background tasks
+- **Node Management**: View node status, get/update node status (active/taint/decommission/removed), forget removed nodes, get cluster balance snapshot, query Raft leader
+- **Task Management**: List task types, create/cancel/force-cancel/cleanup background tasks (repair, replace-disk, rebalance, decommission), backfill target_node
 - **Health Check**: Check cluster health status
 
 ## s3file CLI
@@ -640,13 +699,15 @@ StoreFS provides a task system for long-running administrative operations on the
 
 - **Repair Task** (`repair`): Scans and repairs corrupted or missing file fragments on a specified node. Supports both replica and erasure code (EC) policies — automatically reconstructs data from healthy nodes.
 - **Replace Disk Task** (`replacedisk`): Migrates all data from an old disk to a new disk on the same node. Used when a physical disk needs replacement or upgrade.
+- **Rebalance Task** (`rebalance`): Rebalances storage usage across the cluster so no disk is significantly over- or under-utilized. Runs on the raft leader only.
+- **Decommission Task** (`decommission`): Migrates all data off a node so it can be removed from the cluster. For an offline source node, set `forceRestore=true` to rebuild its fragments from sibling shards/replicas.
 
 ### Key Features
 
 - **Background Execution**: Tasks run asynchronously in the background with progress tracking
 - **Per-Node Concurrency**: The same task type on different nodes can run simultaneously
-- **Cancel Support**: Running tasks can be safely cancelled
-- **Super Admin Only**: Repair and replace-disk operations require `super_admin` role
+- **Cancel Support**: Running tasks can be safely cancelled; force-cancel (bypassing the node-liveness check) is available for super admins
+- **Super Admin Only**: Repair, replace-disk, rebalance, and decommission operations require `super_admin` role
 - **MCP Integration**: Create and manage tasks through natural language
 
 ### Documentation

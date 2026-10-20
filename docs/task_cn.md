@@ -24,10 +24,14 @@ Pending → Running → Completed / Failed / Cancelled
 
 | 任务类型 | 并发模式 | 限制 |
 |---|---|---|
-| `repair` | 按节点单例 | 每个节点同一时间只能运行一个 repair 任务；不同节点可以同时修复 |
-| `replacedisk` | 按节点单例 | 每个节点同一时间只能运行一个 replacedisk 任务；不同节点可以同时进行 |
+| `repair` | 集群单例 | 与其它维护任务互斥执行 |
+| `replacedisk` | 集群单例 | 与其它维护任务互斥执行 |
+| `rebalance` | 集群单例 | 与其它维护任务互斥执行（仅 leader 节点） |
+| `decommission` | 集群单例 | 与其它维护任务互斥执行 |
 
-创建 `repair` 和 `replacedisk` 任务都需要 **super_admin** 角色权限。
+四种维护任务类型（`repair`、`replacedisk`、`rebalance`、`decommission`）共用**一个集群级维护互斥组**——任意时刻最多只有一个处于 pending/running，跨节点同样互斥。创建时若已有其它维护任务 pending/running，会被拒绝。
+
+创建这四种任务都需要 **super_admin** 角色权限。
 
 ---
 
@@ -162,6 +166,123 @@ Content-Type: application/json
 
 ---
 
+## 任务：`rebalance`（再平衡）
+
+在集群范围内重新平衡存储占用，使各磁盘不会显著过载或空置。**仅在 raft leader 节点运行**，与 `repair`、`replacedisk`、`decommission` 互斥。
+
+### 适用场景
+
+- 新增节点/磁盘大部分为空，而现有磁盘已满
+- decommission 或替换磁盘后磁盘占用失衡
+- 希望主动保持磁盘均衡
+
+### 参数
+
+无。规划根据当前集群平衡度自动计算。
+
+### 执行过程
+
+1. **采集**所有在线节点的分盘用量。
+2. **计算**平衡度；若最大偏差在 5% 以内，立即退出（`already_balanced_within_5pct`）。
+3. **规划**迁移（超预算的源磁盘 → 低于预算的目标磁盘），遵循反亲和。
+4. **迁移** fragment（worker 池：raw 拷贝 + 迁行 + 删源；源文件缺失时从兄弟 shard/replica 重建）。
+5. **退出**条件：偏差回到 2% 以内或队列耗尽；拓扑变化时提前停止。
+
+### MCP 工具
+
+```
+storefs_create_rebalance_task()
+```
+
+### REST API
+
+```
+POST /api/tasks
+Content-Type: application/json
+
+{
+  "type": "rebalance",
+  "params": {}
+}
+```
+
+### 结果字段
+
+| 字段 | 说明 |
+|---|---|
+| `totalPlanned` | 规划的迁移数 |
+| `migratedFiles` | 成功迁移的 fragment 数 |
+| `migratedBytes` | 迁移的总字节数 |
+| `failedFiles` | 迁移失败的 fragment 数 |
+| `skippedFiles` | 跳过的 fragment 数（目标被 taint 等） |
+| `imbalanceBefore` / `imbalanceAfter` | 迁移前后最大偏差（×100 %） |
+| `topologyChanged` | 是否因拓扑变化而停止 |
+| `exitReason` | `balanced` / `migrated` / `topology_changed` / `cancelled` |
+
+---
+
+## 任务：`decommission`（节点下线）
+
+将节点上的**全部**数据迁出，使其可从集群移除。与 `repair`、`replacedisk`、`rebalance` 互斥。
+
+### 适用场景
+
+- 永久下线一台服务器
+- 将存储整合到更少的节点
+
+### 参数
+
+| 参数 | 类型 | 必填 | 说明 |
+|---|---|---|---|
+| `nodeName` | string | 是 | 要下线的节点（其 fragment 被迁出） |
+| `forceRestore` | bool | 否 | 当源节点**离线**时设为 `true`：从兄弟 shard/replica 重建其 fragment（比在线迁移慢）。离线源节点且 `forceRestore=false` 会被 `409` 拒绝。 |
+
+### 执行过程
+
+1. **校验**源节点在线（或已设 `forceRestore`），且剩余可承载节点数满足全部存储策略的冗余要求。
+2. **标记**节点为 `decommission`（任务开始即阻断写入）。
+3. **迁移** `completed` fragment 优先，随后是 `pending`/`failure` fragment（最后处理，30 分钟超时）。
+4. **校验**源节点已清空、等待 gossip 传播、二次扫描后，原子地将节点置为 `removed` 且任务置为 `completed`。
+
+### MCP 工具
+
+```
+storefs_create_decommission_task(
+  nodeName: "node3",
+  forceRestore: false
+)
+```
+
+### REST API
+
+```
+POST /api/tasks
+Content-Type: application/json
+
+{
+  "type": "decommission",
+  "params": {
+    "nodeName": "node3",
+    "forceRestore": false
+  }
+}
+```
+
+### 结果字段
+
+| 字段 | 说明 |
+|---|---|
+| `phase` | `completed` / `pending_timeout` / `migrated` / `cancelled` / `blocked` |
+| `totalFragments` | 源节点上的 fragment 总数 |
+| `migratedFiles` / `migratedBytes` | 成功迁移的 fragment 数 / 字节数 |
+| `failedFiles` | 迁移失败的 fragment 数 |
+| `skippedFiles` | 跳过的 fragment 数（软删桶等） |
+| `pendingTotal` / `pendingMigrated` / `pendingUnmoved` | pending 类 fragment 计数 |
+| `nodeEmpty` | 源节点是否已完全清空 |
+| `exitReason` | `completed` / `pending_timeout` / `queue_exhausted` / `cancelled` |
+
+---
+
 ## 任务管理
 
 ### 列出任务
@@ -192,6 +313,18 @@ storefs_cancel_task(taskId: "123456")
 
 # REST
 POST /api/tasks/123456/cancel
+```
+
+### 强制取消任务（super_admin）
+
+当执行节点状态为 `Unknown`/`Offline` 时普通取消会被拒绝。强制取消绕过该 liveness 检查（仍遵循任务状态机——`completed`/`failed` 不会被覆盖）。
+
+```bash
+# MCP
+storefs_force_cancel_task(taskId: "123456")
+
+# REST
+POST /api/tasks/123456/force-cancel
 ```
 
 ### 删除任务
@@ -226,6 +359,10 @@ Content-Type: application/json
 | 列出/查看任务 | 任意已认证用户 |
 | 创建 `repair` 任务 | `super_admin` |
 | 创建 `replacedisk` 任务 | `super_admin` |
-| 创建其他类型任务 | 视类型而定 |
-| 取消/删除任务 | 视类型而定 |
+| 创建 `rebalance` 任务 | `super_admin` |
+| 创建 `decommission` 任务 | `super_admin` |
+| 取消任务 | 任意已认证用户（受 liveness 检查） |
+| 强制取消任务 | `super_admin` |
+| 删除任务 | 任意已认证用户 |
 | 清理旧任务 | `super_admin` |
+| 回填 target_node | `super_admin` |

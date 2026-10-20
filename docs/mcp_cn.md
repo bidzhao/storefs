@@ -199,8 +199,10 @@ MCP 服务器提供 **90+ 工具**，分为十二个功能组：
 | `storefs_cluster_status` | 列出所有节点、磁盘、使用情况及污点状态 |
 | `storefs_node_metrics` | 获取 Prometheus 指标（可选过滤） |
 | `storefs_change_password` | 修改当前用户的密码 |
-| `storefs_list_node_status` | 查看所有节点的污点状态 |
-| `storefs_update_node_status` | 更新节点的污点状态（仅 super_admin） |
+| `storefs_list_node_status` | 查看所有节点的状态（污点/decommission/removed） |
+| `storefs_update_node_status` | 更新节点状态：`active`/`taint`/`decommission`/`removed`（仅 super_admin） |
+| `storefs_delete_node_status` | Forget 节点 — 删除其状态记录，使其可作为新成员重新加入（仅 super_admin；只允许删除 `removed` 状态的节点） |
+| `storefs_get_cluster_balance` | 获取集群均衡快照（基准用量、最大偏差、参与磁盘数、是否需要再平衡） |
 
 ### 2. 用户与分组管理工具
 
@@ -309,18 +311,25 @@ ACL 权限：`FULL_CONTROL` | `WRITE` | `READ` | `READ_ACP` | `WRITE_ACP`
 | 工具 | 说明 |
 |------|------|
 | `storefs_list_task_types` | 列出所有可用的任务类型 |
-| `storefs_list_tasks` | 列出所有任务（支持分页和状态过滤） |
+| `storefs_list_tasks` | 列出所有任务（支持分页和状态过滤；`targetNode` 返回某节点的最近一次 repair/replacedisk/decommission 任务） |
 | `storefs_get_task` | 获取任务详情 |
 | `storefs_create_task` | 创建任务（通用） |
 | `storefs_create_repair_task` | 创建修复任务 — 修复节点上损坏/丢失的碎片（需 super_admin 权限） |
 | `storefs_create_replacedisk_task` | 创建替换磁盘任务 — 将旧磁盘数据迁移到新磁盘（需 super_admin 权限） |
+| `storefs_create_rebalance_task` | 创建集群容量再平衡任务 — 在 leader 节点运行，无参数（需 super_admin 权限） |
+| `storefs_create_decommission_task` | 创建节点下线任务 — `nodeName` + 可选 `forceRestore`（源节点离线时使用）（需 super_admin 权限） |
 | `storefs_cancel_task` | 取消运行中的任务 |
+| `storefs_force_cancel_task` | 强制取消任务 — 绕过执行节点 liveness 检查（需 super_admin 权限） |
 | `storefs_delete_task` | 删除任务（运行中的任务会先取消） |
 | `storefs_cleanup_tasks` | 清理过期的已完成/失败任务（需 super_admin 权限） |
+| `storefs_backfill_target_node` | 回填历史任务的 `target_node` 字段（需 super_admin 权限） |
+| `storefs_get_latest_task_by_target_node` | 获取某目标节点最近一次 repair/replacedisk/decommission 任务 |
 
 任务是异步后台操作，在指定节点上执行。使用 `storefs_list_tasks` 监控进度，`storefs_get_task` 查看详情。
 
-关于任务系统、修复和替换磁盘操作的详细文档，请参考[任务系统文档](task_cn.md)。
+> **权限**：`repair`/`replacedisk`/`rebalance`/`decommission` 创建、`force-cancel`、`backfill_target` 均需 `super_admin`。对**离线**源节点执行 decommission 会被拒绝，除非设置 `forceRestore=true`。
+
+关于任务系统、修复、替换磁盘、再平衡和节点下线操作的详细文档，请参考[任务系统文档](task_cn.md)。
 
 ### 8. 通知管理工具
 

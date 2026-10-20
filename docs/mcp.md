@@ -199,8 +199,10 @@ The MCP server exposes **90+ tools** organized into twelve groups:
 | `storefs_cluster_status` | List all nodes, their disks, usage, and taint status |
 | `storefs_node_metrics` | Fetch Prometheus metrics (with optional filter) |
 | `storefs_change_password` | Change current user's password |
-| `storefs_list_node_status` | List all node taint statuses |
-| `storefs_update_node_status` | Update a node's taint status (super_admin only) |
+| `storefs_list_node_status` | List all node statuses (taint/decommission/removed) |
+| `storefs_update_node_status` | Update a node's status: `active`/`taint`/`decommission`/`removed` (super_admin only) |
+| `storefs_delete_node_status` | Forget a node — delete its status record so it can rejoin as a fresh member (super_admin only; only `removed` nodes can be forgotten) |
+| `storefs_get_cluster_balance` | Get the cluster balance snapshot (reference usage, max deviation, eligible disks, rebalance-needed flag) |
 
 ### 2. User & Group Management Tools
 
@@ -307,18 +309,25 @@ Bucket-level features you can configure:
 | Tool | Description |
 |------|-------------|
 | `storefs_list_task_types` | List all available task types |
-| `storefs_list_tasks` | List all tasks with pagination and status filter |
+| `storefs_list_tasks` | List all tasks with pagination and status filter (`targetNode` returns the latest repair/replacedisk/decommission task for a node) |
 | `storefs_get_task` | Get task details |
 | `storefs_create_task` | Create a task (generic) |
 | `storefs_create_repair_task` | Create a repair task — repair damaged/missing fragments on a node (super_admin only) |
 | `storefs_create_replacedisk_task` | Create a replace-disk task — migrate data from old disk to new disk (super_admin only) |
+| `storefs_create_rebalance_task` | Create a cluster rebalance task — runs on the leader, no params (super_admin only) |
+| `storefs_create_decommission_task` | Create a node decommission task — `nodeName` + optional `forceRestore` for offline sources (super_admin only) |
 | `storefs_cancel_task` | Cancel a running task |
+| `storefs_force_cancel_task` | Force-cancel a task — bypasses the node-liveness check (super_admin only) |
 | `storefs_delete_task` | Delete a task (running tasks are cancelled first) |
 | `storefs_cleanup_tasks` | Clean up old completed/failed tasks (super_admin only) |
+| `storefs_backfill_target_node` | Backfill `target_node` for historical tasks (super_admin only) |
+| `storefs_get_latest_task_by_target_node` | Get the latest repair/replacedisk/decommission task for a target node |
 
 Tasks are asynchronous background operations running on a specific node. Use `storefs_list_tasks` to monitor progress and `storefs_get_task` for details.
 
-For detailed documentation on the task system, repair, and replace-disk operations, see the [Task System Documentation](task.md).
+> **Permissions**: `repair`/`replacedisk`/`rebalance`/`decommission` creation, `force-cancel`, and `backfill_target` all require `super_admin`. Decommission of an **offline** source node is rejected unless `forceRestore=true` is set.
+
+For detailed documentation on the task system, repair, replace-disk, rebalance, and decommission operations, see the [Task System Documentation](task.md).
 
 ### 8. Notification Management Tools
 

@@ -1502,7 +1502,7 @@ Authorization: Bearer <token>
 }
 ```
 
-#### 7.2 Get Node Taint Status
+#### 7.2 Get Node Status
 
 **URL**: `GET /api/node-status`
 
@@ -1514,7 +1514,8 @@ Authorization: Bearer <token>
 **Response**:
 ```json
 {
-  "nodes": [
+  "success": true,
+  "statuses": [
     {
       "nodeName": "node1",
       "status": "active",
@@ -1523,7 +1524,7 @@ Authorization: Bearer <token>
     },
     {
       "nodeName": "node2",
-      "status": "taint",
+      "status": "decommission",
       "operator": 1,
       "lastUpdateAt": "2025-01-01 12:05:00"
     }
@@ -1531,18 +1532,76 @@ Authorization: Bearer <token>
 }
 ```
 
-#### 7.3 Update Node Taint Status
+**Note**: The response key is `statuses` (array). When there are no records, the array is `[]` (never `null`).
+
+#### 7.3 Update Node Status
 
 **URL**: `PUT /api/node-status/:nodeName`
 
 **Request**:
 ```json
 {
-  "status": "taint"
+  "status": "decommission"
 }
 ```
 
-**Values**: `active` (normal operation), `taint` (prevent new data writes). Requires `super_admin` role.
+**Values** (requires `super_admin` role):
+
+| Status | Meaning |
+|---|---|
+| `active` | Normal operation — the node is writable. Restoring `active` is guarded by a transaction (`ActivateNodeIfSafe`): it is rejected with `409 Conflict` if the node is `removed` or has a pending/running decommission task. |
+| `taint` | Temporarily prevent new data writes (e.g. disk full). |
+| `decommission` | Node is being drained (decommission in progress). |
+| `removed` | Data has been migrated off — the node is **irreversibly** excluded from writes (the ring also keeps it non-writable). Setting `removed` cannot be undone by setting `active`; use the forget flow (7.5) to let the node rejoin as a fresh member. |
+
+#### 7.4 Cluster Balance Snapshot
+
+**URL**: `GET /api/balance`
+
+**Request Header**:
+```http
+Authorization: Bearer <token>
+```
+
+**Response**:
+```json
+{
+  "success": true,
+  "referenceUsage": 62.5,
+  "deviation": 8.2,
+  "eligibleCount": 6,
+  "needsRebalance": true
+}
+```
+
+**Note**: Uses the same computation as the rebalance task (`ComputeBalance`), including the same taint/removed exclusion, so the frontend never computes balance locally.
+
+#### 7.5 Forget a Node (delete node status record)
+
+**URL**: `DELETE /api/node-status/:nodeName`
+
+**Request Header**:
+```http
+Authorization: Bearer <token>
+```
+
+**Response**:
+```json
+{
+  "success": true
+}
+```
+
+**Rules**:
+- Requires `super_admin` role.
+- Only a node whose status is `removed` can be forgotten — `active`/`taint`/`decommission` are rejected with `400 Bad Request`.
+- The operation deletes the `node_status` row, clears the local ring's `removed`/`taint` flags, and broadcasts `forgot` to all peers, so the node can rejoin the cluster as a fresh member.
+
+#### 7.6 Get Local Node Status (internal)
+
+**URL**: `GET /api/node/mystatus/internal`
+
+**Note**: No authentication required. Used by the rebalance task (running in the leader's background without an admin token) to fetch each peer's per-disk usage. Response body is the same as `GET /api/node/mystatus`.
 
 ### 8. Health Check
 
@@ -1853,8 +1912,9 @@ Authorization: Bearer <token>
 ```
 
 **Error Responses**:
-- 200: `{"error": "cannot delete KMS config: N key(s) still reference this config"}` if the config has key references
-- 200: `{"message": "KMS config deleted successfully"}` on success
+- `409 Conflict`: `{"error": "cannot delete KMS config: N key(s) still reference this config"}` if the config still has key references
+- `500 Internal Server Error`: other delete failures
+- `200 OK`: `{"message": "KMS config deleted successfully"}` on success
 
 **Note**: Before deleting a KMS config, all KMS keys referencing it must be deleted or migrated to another config.
 
@@ -2137,7 +2197,7 @@ Content-Type: application/json
 Authorization: Bearer <token>
 ```
 
-**Note**: The key cannot be deleted if it is currently in use by one or more buckets. The check is performed before deletion.
+**Note**: The key cannot be deleted if it is currently in use by one or more buckets (the check is performed before deletion). If the key has no references, the database row is deleted **regardless of whether the KMS client connection is available** — the KMS-side key deletion is best-effort, and a key orphaned on the KMS side (e.g. KMS service was down) is cleaned up out-of-band.
 
 **Response**:
 ```json
@@ -2149,7 +2209,6 @@ Authorization: Bearer <token>
 **Error Responses**:
 - 409 Conflict: Key is in use by one or more buckets
 - 404 Not Found: Key does not exist
-- 503 Service Unavailable: KMS client not initialized
 
 #### 9.15 Rotate KMS Key
 
@@ -2788,6 +2847,266 @@ Content-Type: application/json
 - The log bucket must carry a policy authorizing the logging service (see the [Bucket Logging documentation](bucketlogging.md))
 
 **Response**: `{"status": "ok"}`
+
+### 13. Task Management
+
+Tasks are asynchronous background maintenance operations (`repair`, `replacedisk`, `rebalance`, `decommission`). The task system, task lifecycle, and each task type are documented in detail in [task.md](task.md); this section covers the REST API.
+
+> **Permissions**: Creating `repair`/`replacedisk`/`rebalance`/`decommission` tasks requires `super_admin`. `force-cancel` and `backfill_target` also require `super_admin`.
+
+#### 13.1 List Task Types
+
+**URL**: `GET /api/tasks/types`
+
+**Request Header**:
+```http
+Authorization: Bearer <token>
+```
+
+**Response**:
+```json
+{
+  "success": true,
+  "types": [
+    {
+      "type": "repair",
+      "description": "Repair damaged/missing fragments on a node",
+      "paramsSchema": {}
+    },
+    {
+      "type": "rebalance",
+      "description": "Cluster capacity rebalance (runs on the leader)",
+      "paramsSchema": {}
+    },
+    {
+      "type": "decommission",
+      "description": "Migrate all fragments off a node",
+      "paramsSchema": {}
+    }
+  ]
+}
+```
+
+#### 13.2 List Tasks
+
+**URL**: `GET /api/tasks`
+
+**Query Parameters**:
+| Param | Description |
+|---|---|
+| `page` | Page number (default 1) |
+| `pageSize` | Items per page (default 20) |
+| `status` | Filter by status: `pending`/`running`/`completed`/`failed`/`cancelled` |
+| `type` | Filter by task type |
+| `nodeName` | Filter by execution node |
+| `targetNode` | Return only the **most recent** `repair`/`replacedisk`/`decommission` task for the given target node (ORDER BY `created_at DESC, id DESC LIMIT 1`). Used by the NodeList page to show per-node task history. |
+
+**Response**:
+```json
+{
+  "success": true,
+  "tasks": [
+    {
+      "id": "1234567890",
+      "name": "decommission-node3-20260101-120000",
+      "type": "decommission",
+      "status": "running",
+      "nodeName": "node1",
+      "params": { "nodeName": "node3", "forceRestore": false },
+      "output": "...",
+      "errorMessage": "",
+      "progress": 42,
+      "createdAt": "2026-01-01 12:00:00",
+      "startedAt": "2026-01-01 12:00:01",
+      "completedAt": null
+    }
+  ],
+  "total": 1,
+  "page": 1
+}
+```
+
+#### 13.3 Get Task Details
+
+**URL**: `GET /api/tasks/:id`
+
+**Request Header**:
+```http
+Authorization: Bearer <token>
+```
+
+**Response**:
+```json
+{
+  "success": true,
+  "task": {
+    "id": "1234567890",
+    "name": "rebalance-20260101-120000",
+    "type": "rebalance",
+    "status": "completed",
+    "nodeName": "node1",
+    "params": {},
+    "output": "{\"phase\":\"completed\",\"totalPlanned\":120,\"migratedFiles\":120,\"migratedBytes\":4294967296,...}",
+    "errorMessage": "",
+    "progress": 100,
+    "createdAt": "2026-01-01 12:00:00",
+    "startedAt": "2026-01-01 12:00:01",
+    "completedAt": "2026-01-01 12:05:00"
+  }
+}
+```
+
+#### 13.4 Create Task
+
+**URL**: `POST /api/tasks`
+
+**Request Header**:
+```http
+Authorization: Bearer <token>
+Content-Type: application/json
+```
+
+**Request Body**:
+```json
+{
+  "type": "decommission",
+  "params": {
+    "nodeName": "node3",
+    "forceRestore": false
+  }
+}
+```
+
+**Task parameters by type**:
+
+| Type | Params | Notes |
+|---|---|---|
+| `repair` | `node` (required), `disk` (optional) | Repair damaged/missing fragments on a node or disk. |
+| `replacedisk` | `oldDiskPath`, `newDiskPath`, `nodeName` | Migrate data from an old disk to a new one. |
+| `rebalance` | none | Balance disk occupancy across the cluster. Runs on the raft leader. |
+| `decommission` | `nodeName` (required), `forceRestore` (bool, default false) | Migrate all fragments off a node. If the source node is **offline** and `forceRestore` is not `true`, the request is rejected with **`409 Conflict`** (rebuild from other nodes requires `forceRestore=true`). |
+
+**Response**:
+```json
+{
+  "success": true,
+  "task": {
+    "id": "1234567890",
+    "name": "decommission-node3-20260101-120000",
+    "type": "decommission",
+    "status": "pending",
+    "nodeName": "node1",
+    ...
+  }
+}
+```
+
+#### 13.5 Cancel Task
+
+**URL**: `POST /api/tasks/:id/cancel`
+
+**Request Header**:
+```http
+Authorization: Bearer <token>
+```
+
+**Response**:
+```json
+{
+  "success": true,
+  "message": "task cancelled"
+}
+```
+
+**Behavior**: If the execution node is `Unknown`/`Offline`, a normal cancel is rejected; use `force-cancel` (13.6) instead.
+
+#### 13.6 Force-Cancel Task
+
+**URL**: `POST /api/tasks/:id/force-cancel`
+
+**Request Header**:
+```http
+Authorization: Bearer <token>
+```
+
+**Response**:
+```json
+{
+  "success": true,
+  "message": "task force-cancelled"
+}
+```
+
+**Rules**:
+- Requires `super_admin` role.
+- Bypasses the node-liveness check (used when the execution node is offline/unknown and the maintenance mutex must be released).
+- Still respects the task state machine: `completed`/`failed` are never overwritten.
+
+#### 13.7 Delete Task
+
+**URL**: `DELETE /api/tasks/:id`
+
+**Request Header**:
+```http
+Authorization: Bearer <token>
+```
+
+**Response**:
+```json
+{
+  "success": true
+}
+```
+
+**Note**: A running task is cancelled before deletion.
+
+#### 13.8 Clean Up Old Tasks
+
+**URL**: `POST /api/tasks/cleanup`
+
+**Request Header**:
+```http
+Authorization: Bearer <token>
+Content-Type: application/json
+```
+
+**Request Body**:
+```json
+{
+  "days": 90
+}
+```
+
+**Response**:
+```json
+{
+  "success": true,
+  "message": "cleaned 5 old tasks"
+}
+```
+
+#### 13.9 Backfill Target Node (historical data migration)
+
+**URL**: `POST /api/tasks/backfill_target`
+
+**Request Header**:
+```http
+Authorization: Bearer <token>
+```
+
+**Response**:
+```json
+{
+  "success": true,
+  "filled": 12,
+  "blocked": 0
+}
+```
+
+**Rules**:
+- Requires `super_admin` role.
+- Backfills the `target_node` column for historical `repair`/`replacedisk`/`decommission` tasks by parsing their `params` (idempotent — only fills rows where `target_node IS NULL`).
+- `filled` = number of tasks updated; `blocked` = tasks whose params could not be parsed.
 
 ## Error Response Format
 

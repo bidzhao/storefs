@@ -1365,14 +1365,15 @@ Authorization: Bearer <token>
 }
 ```
 
-#### 7.2 获取节点污点状态
+#### 7.2 获取节点状态
 
 **URL**：`GET /api/node-status`
 
 **响应**：
 ```json
 {
-  "nodes": [
+  "success": true,
+  "statuses": [
     {
       "nodeName": "node1",
       "status": "active",
@@ -1381,7 +1382,7 @@ Authorization: Bearer <token>
     },
     {
       "nodeName": "node2",
-      "status": "taint",
+      "status": "decommission",
       "operator": 1,
       "lastUpdateAt": "2025-01-01 12:05:00"
     }
@@ -1389,18 +1390,66 @@ Authorization: Bearer <token>
 }
 ```
 
-#### 7.3 更新节点污点状态
+**注意**：响应键为 `statuses`（数组）。无记录时返回 `[]`（绝不会是 `null`）。
+
+#### 7.3 更新节点状态
 
 **URL**：`PUT /api/node-status/:nodeName`
 
 **请求**：
 ```json
 {
-  "status": "taint"
+  "status": "decommission"
 }
 ```
 
-**可选值**：`active`（正常运行）、`taint`（阻止新数据写入）。需要 `super_admin` 角色。
+**可选值**（需要 `super_admin` 角色）：
+
+| 状态 | 含义 |
+|---|---|
+| `active` | 正常运行，节点可写。恢复 `active` 有事务级并发保护（`ActivateNodeIfSafe`）：若节点为 `removed` 或存在 pending/running 的 decommission 任务，返回 `409 Conflict`。 |
+| `taint` | 临时阻止新数据写入（如磁盘已满）。 |
+| `decommission` | 节点正在下线（数据迁移进行中）。 |
+| `removed` | 数据已全部迁出，节点被**不可逆**排除写入（ring 同时保持其不可写）。设置 `removed` 后不能通过设置 `active` 恢复；需用 forget 流程（7.5）让节点作为新成员重新加入。 |
+
+#### 7.4 集群均衡快照
+
+**URL**：`GET /api/balance`
+
+**响应**：
+```json
+{
+  "success": true,
+  "referenceUsage": 62.5,
+  "deviation": 8.2,
+  "eligibleCount": 6,
+  "needsRebalance": true
+}
+```
+
+**注意**：与 rebalance 任务使用同一计算口径（`ComputeBalance`，含相同的 taint/removed 排除），前端不本地重复计算。
+
+#### 7.5 Forget 节点（删除节点状态记录）
+
+**URL**：`DELETE /api/node-status/:nodeName`
+
+**响应**：
+```json
+{
+  "success": true
+}
+```
+
+**规则**：
+- 需要 `super_admin` 角色。
+- 仅状态为 `removed` 的节点可被 forget —— `active`/`taint`/`decommission` 状态返回 `400 Bad Request`。
+- 操作删除 `node_status` 行、清除本地 ring 的 `removed`/`taint` 标记，并向所有对端广播 `forgot`，使节点可作为新成员重新加入集群。
+
+#### 7.6 获取本节点状态（内部）
+
+**URL**：`GET /api/node/mystatus/internal`
+
+**注意**：无需认证。供 rebalance 任务（在 leader 后台运行、无 admin token）拉取各对端节点的分盘用量。响应体与 `GET /api/node/mystatus` 相同。
 
 ### 8. 健康检查（Health Check）
 
@@ -1696,8 +1745,9 @@ Authorization: Bearer <token>
 **所需角色**：`super_admin`
 
 **错误响应**：
-- 200：`{"error": "cannot delete KMS config: N key(s) still reference this config"}` 如果配置仍有密钥引用
-- 200：`{"message": "KMS config deleted successfully"}` 删除成功
+- `409 Conflict`：`{"error": "cannot delete KMS config: N key(s) still reference this config"}` 如果配置仍有密钥引用
+- `500 Internal Server Error`：其它删除失败
+- `200 OK`：`{"message": "KMS config deleted successfully"}` 删除成功
 
 **注意**：删除 KMS 配置前，必须先删除所有引用该配置的 KMS 密钥。
 
@@ -1979,7 +2029,7 @@ Content-Type: application/json
 Authorization: Bearer <token>
 ```
 
-**注意**：如果密钥当前被一个或多个桶使用，无法删除。删除前会进行检查。
+**注意**：如果密钥当前被一个或多个桶使用，无法删除（删除前会进行检查）。若密钥无引用，则无论 KMS 客户端连接是否可用都会删除数据库行 —— KMS 侧的密钥删除为 best-effort，KMS 侧孤儿密钥（如删除时 KMS 服务不可用）由带外清理。
 
 **响应**：
 ```json
@@ -1991,7 +2041,6 @@ Authorization: Bearer <token>
 **错误响应**：
 - 409 Conflict：密钥被一个或多个桶使用
 - 404 Not Found：密钥不存在
-- 503 Service Unavailable：KMS 客户端未初始化
 
 #### 9.15 轮转 KMS 密钥
 
@@ -2630,6 +2679,225 @@ Content-Type: application/json
 - 日志桶必须配置授权日志服务主体的策略（见[桶日志文档](bucketlogging_cn.md)）
 
 **响应**：`{"status": "ok"}`
+
+### 13. 任务管理（Task Management）
+
+任务是异步后台维护操作（`repair`、`replacedisk`、`rebalance`、`decommission`）。任务系统、任务生命周期及各任务类型的详细介绍见 [task_cn.md](task_cn.md)；本节覆盖 REST API。
+
+> **权限**：创建 `repair`/`replacedisk`/`rebalance`/`decommission` 任务需要 `super_admin`。`force-cancel` 与 `backfill_target` 同样需要 `super_admin`。
+
+#### 13.1 列出任务类型
+
+**URL**：`GET /api/tasks/types`
+
+**响应**：
+```json
+{
+  "success": true,
+  "types": [
+    {
+      "type": "repair",
+      "description": "修复节点上损坏/缺失的片段",
+      "paramsSchema": {}
+    },
+    {
+      "type": "rebalance",
+      "description": "集群容量再平衡（在 leader 节点运行）",
+      "paramsSchema": {}
+    },
+    {
+      "type": "decommission",
+      "description": "将节点上全部片段迁出",
+      "paramsSchema": {}
+    }
+  ]
+}
+```
+
+#### 13.2 列出任务
+
+**URL**：`GET /api/tasks`
+
+**查询参数**：
+
+| 参数 | 说明 |
+|---|---|
+| `page` | 页码（默认 1） |
+| `pageSize` | 每页条数（默认 20） |
+| `status` | 按状态过滤：`pending`/`running`/`completed`/`failed`/`cancelled` |
+| `type` | 按任务类型过滤 |
+| `nodeName` | 按执行节点过滤 |
+| `targetNode` | 仅返回指定目标节点**最近一次** `repair`/`replacedisk`/`decommission` 任务（ORDER BY `created_at DESC, id DESC LIMIT 1）。供 NodeList 页面展示每节点任务历史。 |
+
+**响应**：
+```json
+{
+  "success": true,
+  "tasks": [
+    {
+      "id": "1234567890",
+      "name": "decommission-node3-20260101-120000",
+      "type": "decommission",
+      "status": "running",
+      "nodeName": "node1",
+      "params": { "nodeName": "node3", "forceRestore": false },
+      "output": "...",
+      "errorMessage": "",
+      "progress": 42,
+      "createdAt": "2026-01-01 12:00:00",
+      "startedAt": "2026-01-01 12:00:01",
+      "completedAt": null
+    }
+  ],
+  "total": 1,
+  "page": 1
+}
+```
+
+#### 13.3 获取任务详情
+
+**URL**：`GET /api/tasks/:id`
+
+**响应**：
+```json
+{
+  "success": true,
+  "task": {
+    "id": "1234567890",
+    "name": "rebalance-20260101-120000",
+    "type": "rebalance",
+    "status": "completed",
+    "nodeName": "node1",
+    "params": {},
+    "output": "{\"phase\":\"completed\",\"totalPlanned\":120,\"migratedFiles\":120,\"migratedBytes\":4294967296,...}",
+    "errorMessage": "",
+    "progress": 100,
+    "createdAt": "2026-01-01 12:00:00",
+    "startedAt": "2026-01-01 12:00:01",
+    "completedAt": "2026-01-01 12:05:00"
+  }
+}
+```
+
+#### 13.4 创建任务
+
+**URL**：`POST /api/tasks`
+
+**请求体**：
+```json
+{
+  "type": "decommission",
+  "params": {
+    "nodeName": "node3",
+    "forceRestore": false
+  }
+}
+```
+
+**各类型任务参数**：
+
+| 类型 | 参数 | 说明 |
+|---|---|---|
+| `repair` | `node`（必填）、`disk`（可选） | 修复节点/磁盘上损坏或缺失的片段。 |
+| `replacedisk` | `oldDiskPath`、`newDiskPath`、`nodeName` | 将数据从旧盘迁移到新盘。 |
+| `rebalance` | 无 | 跨集群平衡磁盘占用。在 raft leader 上运行。 |
+| `decommission` | `nodeName`（必填）、`forceRestore`（bool，默认 false） | 将节点上全部片段迁出。若源节点**离线**且未设 `forceRestore=true`，请求返回 **`409 Conflict`**（离线重建必须 `forceRestore=true`）。 |
+
+**响应**：
+```json
+{
+  "success": true,
+  "task": {
+    "id": "1234567890",
+    "name": "decommission-node3-20260101-120000",
+    "type": "decommission",
+    "status": "pending",
+    "nodeName": "node1",
+    ...
+  }
+}
+```
+
+#### 13.5 取消任务
+
+**URL**：`POST /api/tasks/:id/cancel`
+
+**响应**：
+```json
+{
+  "success": true,
+  "message": "task cancelled"
+}
+```
+
+**行为**：若执行节点状态为 `Unknown`/`Offline`，普通取消会被拒绝；此时应使用 force-cancel（13.6）。
+
+#### 13.6 强制取消任务
+
+**URL**：`POST /api/tasks/:id/force-cancel`
+
+**响应**：
+```json
+{
+  "success": true,
+  "message": "task force-cancelled"
+}
+```
+
+**规则**：
+- 需要 `super_admin` 角色。
+- 绕过执行节点 liveness 检查（用于执行节点离线/未知、需要释放维护互斥组时）。
+- 仍遵循任务状态机：`completed`/`failed` 不会被覆盖。
+
+#### 13.7 删除任务
+
+**URL**：`DELETE /api/tasks/:id`
+
+**响应**：
+```json
+{
+  "success": true
+}
+```
+
+**注意**：运行中的任务会先被取消再删除。
+
+#### 13.8 清理过期任务
+
+**URL**：`POST /api/tasks/cleanup`
+
+**请求体**：
+```json
+{
+  "days": 90
+}
+```
+
+**响应**：
+```json
+{
+  "success": true,
+  "message": "cleaned 5 old tasks"
+}
+```
+
+#### 13.9 回填目标节点（历史数据迁移）
+
+**URL**：`POST /api/tasks/backfill_target`
+
+**响应**：
+```json
+{
+  "success": true,
+  "filled": 12,
+  "blocked": 0
+}
+```
+
+**规则**：
+- 需要 `super_admin` 角色。
+- 通过解析历史 `repair`/`replacedisk`/`decommission` 任务的 `params` 回填 `target_node` 列（幂等 —— 仅填充 `target_node IS NULL` 的行）。
+- `filled` = 已回填的任务数；`blocked` = 参数无法解析的任务数。
 
 ## 错误响应格式
 
