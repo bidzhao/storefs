@@ -12,7 +12,6 @@
 - [Management Console](#management-console)
 - [User Roles and Groups](#user-roles-and-groups)
 - [S3 API](#s3-api)
-- [NV-RDMA Transport (NVIDIA cuObject interop)](#nv-rdma-transport-nvidia-cuobject-interop)
 - [Admin API](#admin-api)
 - [s3file CLI](#s3file-cli)
 - [Gateway (NFS/SMB)](#gateway-nfssmb)
@@ -370,63 +369,6 @@ When StoreFS receives a GET request for an object:
 2. If the bucket is not public, it falls back to normal authentication checks
 
 Public access only applies to GET requests for objects. All other operations (upload, delete, list, etc.) still require proper authentication and authorization.
-
-## NV-RDMA Transport (NVIDIA cuObject interop)
-
-> **StoreFS NV-RDMA transport prototype with NVIDIA cuObject Client
-> system-memory interoperability** — an independent Dynamic-Connect (DC)
-> data plane for NVIDIA cuObject interop over the S3 HTTP control plane.
-
-NV-RDMA is a **separate** transport from Private RDMA (which keys on
-`X-RDMA-Request-ID`). NV-RDMA uses its own headers:
-
-| Header | Meaning |
-|---|---|
-| `x-amz-rdma-token` | cuObject-format token (NVIDIA `cuMemObjGetRDMAToken` output, base64) — **NV-RDMA only** |
-| `x-amz-rdma-reply` | disposition: `200` on success, `501` on any decline |
-| `x-amz-rdma-bytes-transferred` | bytes moved for GET / range-GET |
-
-### Platform matrix
-
-| Platform | NV-RDMA | Private RDMA |
-|---|---|---|
-| linux/amd64, linux/arm64 | ✅ | ✅ |
-| **linux/riscv64** | ❌ (no NVIDIA CUDA — compiled out) | ✅ |
-| darwin (dev) | stub (`ErrUnsupported`) | stub |
-
-On **riscv64**, NV-RDMA is **compiled out** at build time (build tags
-`linux && !nordma && !riscv64`); only Private RDMA is available. Building a
-riscv64 binary never references the cuObject/cgo data plane.
-
-### Behavior
-
-- Token requests are handled **after authorization** (SigV4 → IAM/ACL/Bucket
-  Policy always precede RDMA); the token is **not** an authorization
-  credential.
-- Success: `HTTP 200` + `x-amz-rdma-reply: 200` (GET adds bytes-transferred;
-  range → `206`).
-- Decline (disabled/invalid/expired/replay/unsupported/DCI-unavailable/
-  timeout/>1 GiB): `HTTP 501` + `x-amz-rdma-reply: 501`. The server **never**
-  auto-falls back to the HTTP body; the client may retry as plain S3.
-- Configuration lives under `nvrdma:` in the YAML (see `example/config*.yaml`);
-  `enabled: true` on unsupported platforms fails startup fast.
-- `nvrdma.mockgpu` selects the memory/token source AND the data plane — both
-  use the **same** `x-amz-rdma-token` wire format:
-  - `mockgpu: true` → host-RAM memory + mock cuObject-format token; server
-    uses the **RC data plane** (Soft-RoCE rxe capable — no GPU / SDK /
-    mlx5 hardware needed). Full cuObject protocol simulation with RAM in
-    place of GPU memory.
-  - `mockgpu: false` (default) → real NVIDIA cuObject GPU memory + SDK
-    token; server uses the **mlx5 DC data plane** (needs mlx5 ConnectX DCX
-    hardware + the SDK; fails fast at startup if either is absent).
-  The server parses both with the same code path; only the data plane and
-  validator are selected by `mockgpu`.
-
-### Client
-
-See `examples/rdma/nvrdma/c/` for the Phase-1 NVIDIA cuObject SDK client
-(host-RAM system memory; no GPU required). The real `cuobj_adapter` binding
-follows the installed NVIDIA cuObject SDK headers on the target machine.
 
 ## Admin API
 
