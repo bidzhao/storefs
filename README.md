@@ -712,7 +712,7 @@ If you encounter problems while using StoreFS, please refer to:
 
 1. [FAQ Documentation](docs/faq.md) - Frequently Asked Questions
 2. [Troubleshooting](docs/troubleshooting.md) - Common Problem Troubleshooting
-3. [GitHub Issues](https://github.com/bidzhao/sorefs/issues) - Submit Issue Reports
+3. [GitHub Issues](https://github.com/bidzhao/storefs/issues) - Submit Issue Reports
 
 ## License
 
